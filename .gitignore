@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.log
+checks/artifacts/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*_ed25519
+*_rsa
+__pycache__/
+*.pyc
+release-*.tar.gz

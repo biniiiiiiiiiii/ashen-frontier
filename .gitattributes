@@ -1,0 +1,6 @@
+# 文件行尾统一，确保服务器脚本可直接在 Linux 执行。
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

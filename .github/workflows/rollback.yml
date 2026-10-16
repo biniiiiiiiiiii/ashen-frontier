@@ -1,0 +1,38 @@
+name: 回滚线上版本
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 填 previous 回到上一个版本，或填写保留版本的完整提交 SHA
+        required: true
+        default: previous
+permissions:
+  contents: read
+concurrency:
+  group: ashen-frontier-production
+  cancel-in-progress: false
+jobs:
+  rollback:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: 执行受限回滚命令
+        env:
+          RELEASE: ${{ inputs.release }}
+          SSH_PRIVATE_KEY: ${{ secrets.ECS_DEPLOY_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ECS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE" == previous || "$RELEASE" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_KNOWN_HOSTS"
+          umask 077
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/ecs_deploy"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/ecs_deploy"' EXIT
+          ssh -T -p 22 -i "$HOME/.ssh/ecs_deploy" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=15 \
+            ashen-deploy@39.97.238.154 "rollback $RELEASE"

@@ -1,0 +1,90 @@
+name: 构建并部署到阿里云
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ashen-frontier-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 检查并构建静态游戏
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: 获取代码
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: 配置 Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: 安装依赖并构建
+        run: |
+          npm ci
+          npm run build
+          python3 deploy/verify_receiver.py
+      - name: 打包版本
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: python3 deploy/package_release.py dist "$RELEASE_SHA" release.tar.gz
+      - name: 保留构建产物
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: game-${{ github.sha }}
+          path: release.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: 发布游戏
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.ECS_READY == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    environment:
+      name: production
+      url: http://39.97.238.154:8081/
+    steps:
+      - name: 下载构建产物
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: game-${{ github.sha }}
+      - name: 安全连接并发布
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ECS_DEPLOY_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ECS_KNOWN_HOSTS }}
+          RELEASE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY" || { echo '请先配置 ECS_DEPLOY_KEY'; exit 1; }
+          test -n "$SSH_KNOWN_HOSTS" || { echo '请先配置 ECS_KNOWN_HOSTS'; exit 1; }
+          umask 077
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/ecs_deploy"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/ecs_deploy"' EXIT
+          checksum="$(sha256sum release.tar.gz | cut -d ' ' -f 1)"
+          ssh -T -p 22 -i "$HOME/.ssh/ecs_deploy" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 \
+            ashen-deploy@39.97.238.154 "deploy $RELEASE_SHA $checksum" < release.tar.gz
+          expected="$RELEASE_SHA" python3 - <<'PY'
+          import json, os, urllib.request
+          url = 'http://39.97.238.154:8081/version.json?sha=' + os.environ['expected']
+          with urllib.request.urlopen(url, timeout=15) as response:
+              deployed = json.load(response)
+          assert deployed['sha'] == os.environ['expected'], '公网版本验证失败，请检查安全组与端口'
+          print('公网版本验证通过：' + deployed['sha'])
+          PY
