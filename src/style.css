@@ -2137,3 +2137,139 @@ kbd {
   font-size: 12px;
   line-height: 1.8;
 }
+.blessing-modal {
+  width: min(1040px, 95vw);
+  padding: 32px;
+}
+.blessing-heading {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.blessing-heading h2 {
+  margin: 12px 0;
+  color: #eed5a0;
+  font: 32px var(--serif);
+}
+.blessing-heading p {
+  color: #bdc8ac;
+}
+.blessing-heading small {
+  color: #8b9e89;
+}
+.blessing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+.blessing-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 24px;
+  min-height: 275px;
+  border: 1px solid #526650;
+  background: #202d25;
+  transition:
+    border-color 0.15s,
+    transform 0.15s;
+}
+.blessing-card:hover,
+.blessing-card:focus-visible {
+  border-color: #e2c991;
+  transform: translateY(-3px);
+  outline: 2px solid #c9b980;
+  outline-offset: 2px;
+}
+.blessing-card > span {
+  color: #a4c4b1;
+  font-size: 12px;
+}
+.blessing-card h3 {
+  font: 24px var(--serif);
+  color: #e3d1a5;
+  margin: 25px 0 15px;
+}
+.blessing-card p {
+  color: #c0cbb8;
+  font-size: 13px;
+  line-height: 1.9;
+  margin: 0 0 20px;
+}
+.blessing-card > small {
+  color: #a8c7a0;
+  font-size: 11px;
+  margin-top: auto;
+}
+.blessing-card > b {
+  color: #ddc78c;
+  margin-top: 20px;
+  font-weight: 400;
+  font-size: 12px;
+}
+.blessing-wind {
+  background: #20302d;
+  border-top: 3px solid #92c6c4;
+}
+.blessing-counter {
+  border-top: 3px solid #ddc58a;
+}
+.blessing-ember {
+  background: #30291f;
+  border-top: 3px solid #ce9b6d;
+}
+.blessing-common {
+  border-top: 3px solid #a4c398;
+}
+.blessing-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 26px;
+}
+.blessing-actions > small {
+  max-width: 340px;
+  color: #a3af97;
+  line-height: 1.8;
+}
+.boon-strip {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 12px 18px;
+  border: 1px solid #3b4c3b;
+  background: #18221b;
+  font-size: 12px;
+  color: #a9b79c;
+}
+.boon-strip strong {
+  color: #d3bd83;
+  font-weight: 400;
+}
+.boon-strip span {
+  padding: 4px 9px;
+  border: 1px solid #56664d;
+  color: #ccdbbc;
+}
+.boon-strip button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: #cfbe91;
+}
+@media (max-height: 800px) {
+  .blessing-modal {
+    padding: 22px;
+  }
+  .blessing-heading {
+    margin-bottom: 18px;
+  }
+  .blessing-card {
+    min-height: 240px;
+    padding: 20px;
+  }
+}

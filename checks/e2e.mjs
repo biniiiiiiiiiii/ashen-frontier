@@ -131,6 +131,10 @@ async function bot(dungeon, hard) {
     const s = await state();
     if (s.encounter) encounters.add(s.encounter);
     if (s.mode !== "battle") break;
+    if (s.blessingOffers?.length) {
+      await page.click(`[data-boon="${s.blessingOffers[0]}"]`);
+      continue;
+    }
     if (s.paused) {
       await page.keyboard.press("Escape");
       continue;

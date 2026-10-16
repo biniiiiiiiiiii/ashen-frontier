@@ -94,6 +94,12 @@ export class World extends Phaser.Scene {
       this.actor(760, 392, "npc", -1, 0.85);
       return;
     }
+    for (const patch of this.combat.firePatches) {
+      this.ellipse(patch.x, patch.y, 220, 122, 0xd58b43, 0.16);
+      this.g.lineStyle(1, 0x9ac49d, Math.min(0.7, patch.life));
+      this.g.strokeEllipse(patch.x, patch.y, 220, 122);
+      this.fire(patch.x, patch.y - 20, 0.5);
+    }
     this.telegraphs();
     for (const fx of this.effects) {
       if (fx.kind === "ghost") {
@@ -177,7 +183,7 @@ export class World extends Phaser.Scene {
     this.drawProjectiles();
     const action = this.player.action;
     if (action?.kind === "charging") {
-      const progress = Math.min(1, action.time / 0.8);
+      const progress = Math.min(1, action.time / action.spec.windup);
       this.g.lineStyle(2, progress === 1 ? 0xf5d588 : 0x9acfb9, 0.8);
       this.g.strokeEllipse(
         this.player.x,
@@ -298,6 +304,7 @@ export class World extends Phaser.Scene {
   drawProjectiles() {
     const g = this.g;
     for (const p of this.combat.projectiles) {
+      if ((p.delay ?? 0) > 0) continue;
       if (p.kind === "wave") {
         const x = p.x,
           y = p.y - 33 + (p.visualOffset ?? 0);

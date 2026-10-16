@@ -1,5 +1,6 @@
 import { dungeons, stats } from "./data";
 import { tombWaves, tombWaveNames, enemyArea } from "./encounters";
+import { BlessingRun, type BlessingId } from "./blessings";
 import {
   actions,
   type AttackKey,
@@ -25,6 +26,14 @@ const basic = (kind: ActionKind) =>
   ["light1", "light2", "heavy", "counter"].includes(kind);
 /** 战斗控制器负责动作、实体弹道和受击状态，不直接绘制场景。 */
 export class Combat {
+  boons = new BlessingRun();
+  firePatches: {
+    x: number;
+    y: number;
+    life: number;
+    tick: number;
+    damage: number;
+  }[] = [];
   player = {
     x: 220,
     y: 440,
@@ -80,6 +89,7 @@ export class Combat {
     return a.time >= a.spec.windup + a.spec.active + a.spec.recovery * 0.65;
   }
   start(dungeon: number, hard: boolean) {
+    this.clearBlessings();
     this.bridge.run = {
       dungeon,
       hard,
@@ -119,6 +129,7 @@ export class Combat {
     this.hazards = [];
     this.effects = [];
     this.projectiles = [];
+    if (this.wave === 0) this.firePatches = [];
     this.door = false;
     this.player.action = null;
     this.player.counter = 0;
@@ -186,7 +197,7 @@ export class Combat {
     this.bridge.changed();
   }
   step(dt: number, input: Input) {
-    if (this.bridge.paused) return;
+    if (this.bridge.paused || this.boons.offers.length) return;
     this.clock += dt;
     if (
       this.bridge.mode !== "battle" ||
@@ -248,6 +259,7 @@ export class Combat {
     }
     if (!run.finished) {
       this.projectileStep(dt);
+      this.firePatchStep(dt);
       this.hazardStep(dt);
       this.separate(dt);
     }
@@ -269,6 +281,11 @@ export class Combat {
       if (run.room === 3) {
         run.finished = true;
         this.bridge.finish(true);
+        return;
+      }
+      if (run.dungeon === 0 && this.boons.selected.length < 3) {
+        this.boons.draw(this.bridge.save, p.hp);
+        this.bridge.blessing?.();
         return;
       }
       this.bridge.toast("房间已清理 · 前往右侧传送门，或按 Enter 继续");
@@ -314,7 +331,10 @@ export class Combat {
     }
     if (input.x) p.facing = Math.sign(input.x);
     const speed = basic(kind) ? 1 / (1 + s.speed / 100) : 1;
-    const original = actions[kind],
+    const original =
+        kind === "charging" && this.boons.has("wind-mobility")
+          ? { ...actions.charging, windup: 0.55 }
+          : actions[kind],
       spec = {
         ...original,
         windup: original.windup * speed,
@@ -344,6 +364,7 @@ export class Combat {
     p.attack = 0;
     this.cooldowns[key] =
       original.cooldown *
+      (key === "space" && this.boons.has("step-wind") ? 0.75 : 1) *
       (key === "j" || key === "space" ? 1 : 1 - s.cdr / 100);
     this.bridge.audio(
       kind === "dodge"
@@ -361,10 +382,11 @@ export class Combat {
       a.time += dt;
       if (input.x) a.facing = p.facing = Math.sign(input.x);
       const length = Math.hypot(input.x, input.y) || 1;
-      p.x += (input.x / length) * 72 * dt;
-      p.y += (input.y / length) * 54 * dt;
+      const pace = this.boons.has("wind-mobility") ? 1.85 : 1;
+      p.x += (input.x / length) * 72 * pace * dt;
+      p.y += (input.y / length) * 54 * pace * dt;
       p.moving = !!(input.x || input.y);
-      if (previous < 0.8 && a.time >= 0.8) {
+      if (previous < a.spec.windup && a.time >= a.spec.windup) {
         this.effect("perfect", p.x, p.y - 30, 0.4);
         this.bridge.audio("loot");
       }
@@ -373,7 +395,7 @@ export class Combat {
           ...a,
           kind: "wave",
           time: 0,
-          charged: a.time >= 0.8,
+          charged: a.time >= a.spec.windup,
           spec: { ...actions.wave, windup: 0.1 },
           hit: new Set(),
         };
@@ -422,6 +444,7 @@ export class Combat {
           this.effect("perfect", p.x, p.y - 30, 0.35);
           if (stats(this.bridge.save).specials.includes("reprisal"))
             this.launchWave({ ...a, spec: { ...a.spec, damage: 1.3 } });
+          if (this.boons.has("riposte-fan")) this.launchFan(a);
         }
         const pulse =
           a.kind === "spin"
@@ -458,10 +481,14 @@ export class Combat {
         (basic(a.kind) ? (s.counts[0] >= 2 ? 1.15 : 1) : 1 + s.skill / 100);
       if (a.kind === "heavy" && s.counts[0] >= 4) multiplier += 0.7;
       if (e.burn > 0 && s.counts[2] >= 4) multiplier *= 1.25;
+      if (e.burn > 0 && a.kind === "counter" && this.boons.has("ember-hunt"))
+        multiplier *= 1.3;
       const damage = Math.round(s.attack * multiplier * (crit ? 1.7 : 1));
       if (
         (!basic(a.kind) || a.kind === "counter") &&
-        (s.counts[2] >= 2 || s.specials.includes("wildfire"))
+        (s.counts[2] >= 2 ||
+          s.specials.includes("wildfire") ||
+          (a.kind === "counter" && this.boons.has("ember-seed")))
       )
         e.burn = 4;
       const push =
@@ -484,6 +511,7 @@ export class Combat {
         push: a.facing * push,
         heavy: a.kind === "heavy" || a.kind === "rush" || a.kind === "counter",
       });
+      if (a.kind === "counter") this.counterTempo(a.hit);
       if (a.kind === "spin" && !e.boss && !e.armor) {
         e.vx = (p.x - e.x) * 2.5;
         e.vy = (p.y - e.y) * 2.5;
@@ -495,34 +523,73 @@ export class Combat {
       count = s.counts[1] >= 4 ? 2 : 1;
     if (a.kind === "wave")
       this.cooldowns.k = actions.wave.cooldown * (1 - s.cdr / 100);
-    for (let i = 0; i < count; i++)
+    const echo = a.charged && this.boons.has("wind-echo") ? 2 : 1;
+    for (let layer = 0; layer < echo; layer++)
+      for (let i = 0; i < count; i++)
+        this.projectiles.push({
+          id: ++this.serial,
+          x: this.player.x + a.facing * (34 - i * 40),
+          y: this.player.y,
+          visualOffset: i * 9,
+          oldX: this.player.x,
+          oldY: this.player.y,
+          vx: a.facing * 720,
+          vy: 0,
+          life: 0.95 + i * 0.06,
+          kind: "wave",
+          facing: a.facing,
+          damage:
+            s.attack *
+            a.spec.damage *
+            (1 + s.skill / 100) *
+            (i ? 0.8 : 1) *
+            (a.charged ? 1.7 : 1) *
+            (layer ? 0.5 : 1),
+          crit: s.crit,
+          burn:
+            s.counts[2] >= 2 ||
+            s.specials.includes("wildfire") ||
+            ((!!a.charged || a.kind === "counter") &&
+              this.boons.has("ember-seed")),
+          ember: s.counts[2] >= 4,
+          hit: new Set(),
+          charged: !!a.charged,
+          returnAt:
+            a.charged && s.specials.includes("returning") ? 0.6 : undefined,
+          age: 0,
+          delay: layer ? 0.22 : 0,
+          counterHit: a.kind === "counter" ? a.hit : undefined,
+        });
+  }
+  /** 反击祝福的侧向剑气独立生成，与武器附带的正面剑气同时生效。 */
+  launchFan(a: Action) {
+    const s = stats(this.bridge.save);
+    for (const side of [-1, 1])
       this.projectiles.push({
         id: ++this.serial,
-        x: this.player.x + a.facing * (34 - i * 40),
+        x: this.player.x,
         y: this.player.y,
-        visualOffset: i * 9,
         oldX: this.player.x,
         oldY: this.player.y,
-        vx: a.facing * 720,
-        vy: 0,
-        life: 0.95 + i * 0.06,
+        vx: a.facing * 520,
+        vy: side * 170,
+        life: 0.65,
         kind: "wave",
         facing: a.facing,
-        damage:
-          s.attack *
-          a.spec.damage *
-          (1 + s.skill / 100) *
-          (i ? 0.8 : 1) *
-          (a.charged ? 1.7 : 1),
+        damage: s.attack,
         crit: s.crit,
-        burn: s.counts[2] >= 2 || s.specials.includes("wildfire"),
+        burn: this.boons.fireSource(this.bridge.save),
         ember: s.counts[2] >= 4,
         hit: new Set(),
-        charged: !!a.charged,
-        returnAt:
-          a.charged && s.specials.includes("returning") ? 0.6 : undefined,
-        age: 0,
+        counterHit: a.hit,
       });
+  }
+  /** 同一次反击的斩击、武器剑气与侧向剑气共用一次冷却返还。 */
+  counterTempo(hit: Set<string>) {
+    if (!this.boons.has("riposte-tempo") || hit.has("tempo")) return;
+    hit.add("tempo");
+    for (const key of ["k", "l", "u"] as const)
+      this.cooldowns[key] = Math.max(0, this.cooldowns[key] - 1.2);
   }
   damage(
     e: Enemy,
@@ -539,7 +606,14 @@ export class Combat {
     const damage = Math.max(
       1,
       Math.round(
-        raw * (e.boss && e.state === "recover" && !e.followup ? 1.2 : 1),
+        raw *
+          (e.boss && e.state === "recover" && !e.followup ? 1.2 : 1) *
+          ((e.boss || e.elite) &&
+          e.state === "recover" &&
+          !e.followup &&
+          this.boons.has("opening")
+            ? 1.2
+            : 1),
       ),
     );
     e.hp -= damage;
@@ -575,6 +649,16 @@ export class Combat {
       this.hazards = this.hazards.filter((h) => h.caster !== e || h.fired);
       this.effect("death", e.x, e.y, 0.55);
       this.bridge.reward(e);
+      if (e.burn > 0 && this.boons.has("ember-field")) {
+        if (this.firePatches.length >= 6) this.firePatches.shift();
+        this.firePatches.push({
+          x: e.x,
+          y: e.y,
+          life: 2.5,
+          tick: 0.5,
+          damage: stats(this.bridge.save).attack * 0.225,
+        });
+      }
       if (e.burn > 0 && stats(this.bridge.save).specials.includes("wildfire")) {
         this.effect("blast", e.x, e.y, 0.4);
         for (const nearby of [...this.enemies]) {
@@ -597,11 +681,11 @@ export class Combat {
         allowPrecision &&
         a?.kind === "dodge" &&
         this.phase(a) === "active" &&
-        a.time <= 0.17 &&
+        a.time <= (this.boons.has("riposte-guard") ? 0.23 : 0.17) &&
         !a.hit.has("perfect")
       ) {
         a.hit.add("perfect");
-        p.counter = 1.8;
+        p.counter = this.boons.has("riposte-guard") ? 2.8 : 1.8;
         this.effect("perfect", p.x, p.y - 30, 0.45);
         this.effects.push({
           x: p.x,
@@ -931,6 +1015,10 @@ export class Combat {
   }
   projectileStep(dt: number) {
     for (const shot of this.projectiles) {
+      if ((shot.delay ?? 0) > 0) {
+        shot.delay = Math.max(0, shot.delay! - dt);
+        continue;
+      }
       shot.oldX = shot.x;
       shot.oldY = shot.y;
       shot.x += shot.vx * dt;
@@ -973,6 +1061,11 @@ export class Combat {
             shot.damage *
               (crit ? 1.7 : 1) *
               (shot.ember && wasBurning ? 1.25 : 1) *
+              ((shot.charged || shot.counterHit) &&
+              wasBurning &&
+              this.boons.has("ember-hunt")
+                ? 1.3
+                : 1) *
               (shot.charged && e.boss && e.state === "recover" && !e.followup
                 ? 1.25
                 : 1),
@@ -983,6 +1076,19 @@ export class Combat {
               heavy: !!shot.charged,
             },
           );
+          if (shot.counterHit) this.counterTempo(shot.counterHit);
+          if (shot.charged && !shot.burst && this.boons.has("wind-burst")) {
+            shot.burst = true;
+            this.effect("blast", e.x, e.y, 0.35);
+            for (const nearby of [...this.enemies])
+              if (Math.hypot(nearby.x - e.x, (nearby.y - e.y) * 1.8) < 100)
+                this.damage(
+                  nearby,
+                  stats(this.bridge.save).attack * 0.7,
+                  false,
+                  { stun: 0.15, push: shot.facing * 70 },
+                );
+          }
         }
       } else if (this.swept(shot, this.player.x, this.player.y, 20, 17)) {
         this.hurt(shot.damage, shot.oldX);
@@ -1005,6 +1111,42 @@ export class Combat {
       Math.abs(x - shot.oldX - dx * t) < rx &&
       Math.abs(y - shot.oldY - dy * t) < ry
     );
+  }
+  /** 友方余烬火区只伤害敌人，暂停时由战斗主循环一并冻结。 */
+  firePatchStep(dt: number) {
+    for (const patch of [...this.firePatches]) {
+      if (!this.firePatches.includes(patch)) continue;
+      patch.life -= dt;
+      patch.tick -= dt;
+      if (patch.life < 0 || patch.tick > 0) continue;
+      patch.tick += 0.5;
+      for (const e of [...this.enemies])
+        if (Math.hypot(e.x - patch.x, (e.y - patch.y) * 1.8) < 110)
+          this.damage(e, patch.damage, false, { dot: true });
+    }
+    this.firePatches = this.firePatches.filter((patch) => patch.life > 0);
+  }
+
+  /** 清除本局祝福；结算、撤离与重新开局均不会写回永久属性。 */
+  clearBlessings() {
+    this.boons.reset();
+    this.firePatches = [];
+  }
+
+  chooseBlessing(id: BlessingId) {
+    if (!this.boons.choose(id)) return false;
+    this.previous.clear();
+    this.buffer = null;
+    this.player.action = null;
+    this.player.attack = 0;
+    if (id === "step-wind") this.cooldowns.space *= 0.75;
+    if (id === "vital-spark") {
+      const maximum = stats(this.bridge.save).health;
+      this.player.hp = Math.min(maximum, this.player.hp + maximum * 0.25);
+    }
+    this.bridge.audio("loot");
+    this.bridge.changed();
+    return true;
   }
   hazardStep(dt: number) {
     for (const h of this.hazards) {
@@ -1086,6 +1228,10 @@ export class Combat {
           ? tombWaveNames[this.bridge.run.room][this.wave]
           : null,
       specials: stats(this.bridge.save).specials,
+      blessings: [...this.boons.selected],
+      blessingOffers: [...this.boons.offers],
+      rerolls: this.boons.rerolls,
+      firePatches: this.firePatches.map((patch) => ({ ...patch })),
       effects: this.effects
         .filter((e) => e.kind === "perfect" || e.kind === "blast")
         .map((e) => ({ kind: e.kind, x: e.x, y: e.y })),
@@ -1118,7 +1264,7 @@ export class Combat {
             ? enemyArea(e)
             : undefined,
       })),
-      projectiles: this.projectiles.map(({ hit, ...s }) => s),
+      projectiles: this.projectiles.map(({ hit, counterHit, ...s }) => s),
       hazards: this.hazards.map(({ caster, ...h }) => h),
       door: this.door,
       run: this.bridge.run,

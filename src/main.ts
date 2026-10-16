@@ -1,4 +1,5 @@
 import { actionNames } from "./combat";
+import { blessings, blessingGroups, type BlessingId } from "./blessings";
 import Phaser from "phaser";
 import "./style.css";
 import {
@@ -125,6 +126,7 @@ const bridge: Bridge = {
   changed: () => renderHud(),
   audio,
   toast: notify,
+  blessing: () => openOverlay("blessing"),
 };
 const slotIcon = (slot: string) =>
   slot === "weapon" ? "sword" : slot === "head" ? "helm" : slot;
@@ -141,7 +143,7 @@ app.innerHTML = `<aside class="sidebar"><a class="brand" href="#" aria-label="�
   )
   .join(
     "",
-  )}</nav><div class="sidebar-bottom"><div class="world-status"><i></i> 离线冒险 · 本地存档</div><button class="nav-item" data-action="settings">${icon("settings")}<span>游戏设置</span></button><div class="version">VERSION 1.2 <span>单人冒险</span></div></div></aside><main><header><div class="breadcrumb">灰烬边境 <span>/</span> <b id="page-name">冒险营地</b></div><div class="header-right"><span class="save-tag">${icon("check", 13)} 自动保存</span><span class="wallet">${icon("coin", 17)} <b id="gold">120</b></span><span class="avatar">旅</span></div></header><div class="content"><div id="page-top"></div><section class="stage"><div id="game"></div><div id="scene-ui"></div><div class="scene-bottom" id="scene-bottom"></div></section><div id="below"></div><footer><span>每一件遗落的装备，都藏着一段未完的故事。</span><span>W A S D 移动 <i>·</i> J 攻击 <i>·</i> SPACE 闪避</span></footer></div></main><div id="modal-root"></div><div id="toast" role="status"></div>`;
+  )}</nav><div class="sidebar-bottom"><div class="world-status"><i></i> 离线冒险 · 本地存档</div><button class="nav-item" data-action="settings">${icon("settings")}<span>游戏设置</span></button><div class="version">VERSION 1.3 <span>单人冒险</span></div></div></aside><main><header><div class="breadcrumb">灰烬边境 <span>/</span> <b id="page-name">冒险营地</b></div><div class="header-right"><span class="save-tag">${icon("check", 13)} 自动保存</span><span class="wallet">${icon("coin", 17)} <b id="gold">120</b></span><span class="avatar">旅</span></div></header><div class="content"><div id="page-top"></div><section class="stage"><div id="game"></div><div id="scene-ui"></div><div class="scene-bottom" id="scene-bottom"></div></section><div id="below"></div><footer><span>每一件遗落的装备，都藏着一段未完的故事。</span><span>W A S D 移动 <i>·</i> J 攻击 <i>·</i> SPACE 闪避</span></footer></div></main><div id="modal-root"></div><div id="toast" role="status"></div>`;
 new Phaser.Game({
   type: Phaser.CANVAS,
   parent: "game",
@@ -235,7 +237,7 @@ function render() {
       })
       .join(
         "",
-      )}</div><div class="expedition-options"><div><h4>${dungeons[selectedDungeon].name}</h4><p>3 个战斗房间 + 首领战 · 预计 3–5 分钟</p></div><div class="segmented"><button data-difficulty="normal" class="${!hard ? "selected" : ""}">普通</button><button data-difficulty="hard" class="${hard ? "selected" : ""}" ${!save.cleared.includes(selectedDungeon) ? "disabled" : ""}>困难 ${!save.cleared.includes(selectedDungeon) ? "♙" : ""}</button></div><button id="enter-dungeon" class="button primary" data-action="enter" ${!isUnlocked(selectedDungeon) ? "disabled" : ""}>进入地下城 ${icon("arrow", 18)}</button></div></div>`;
+      )}</div><div class="expedition-options"><div><h4>${dungeons[selectedDungeon].name}</h4><p>3 个战斗房间 + 首领战 · ${selectedDungeon === 0 ? "清房三选一 · 3次局内祝福" : "预计 3–5 分钟"}</p></div><div class="segmented"><button data-difficulty="normal" class="${!hard ? "selected" : ""}">普通</button><button data-difficulty="hard" class="${hard ? "selected" : ""}" ${!save.cleared.includes(selectedDungeon) ? "disabled" : ""}>困难 ${!save.cleared.includes(selectedDungeon) ? "♙" : ""}</button></div><button id="enter-dungeon" class="button primary" data-action="enter" ${!isUnlocked(selectedDungeon) ? "disabled" : ""}>进入地下城 ${icon("arrow", 18)}</button></div></div>`;
     bottom.innerHTML = `<span>${icon("star", 14)} 困难首领十次内必得传说装备</span><span>没有体力限制 · 随时再战</span>`;
     below.innerHTML = `<div class="info-strip">${icon("bag", 24)}<div><strong>为你的流派而战</strong><p>墓道偏向狂战、矿坑偏向风行、圣所偏向余烬。紫色及以上装备有机会属于套装。</p></div><span>探索 · 收集 · 成长</span></div>`;
     if (selectedDungeon === 0)
@@ -287,7 +289,7 @@ function renderHud() {
           : "";
   const actionHint = currentAction
     ? currentAction.kind === "charging"
-      ? `凝风蓄力 ${Math.min(100, Math.floor((currentAction.time / 0.8) * 100))}%`
+      ? `凝风蓄力 ${Math.min(100, Math.floor((currentAction.time / currentAction.spec.windup) * 100))}%`
       : `${currentAction.charged ? "满蓄 · " : ""}${actionNames[currentAction.kind]} · ${phaseName}`
     : world.player.counter > 0
       ? "精准闪避成功 · J 强化反击"
@@ -305,6 +307,21 @@ function renderHud() {
       : "Space闪避 · 抓住破绽";
   el.innerHTML = `<div class="health-panel"><div><strong>灰烬剑士</strong><span>Lv.${save.level}</span></div><div class="hp-track"><i style="width:${(world.player.hp / s.health) * 100}%"></i><span>${Math.ceil(world.player.hp)} / ${s.health}</span></div><div class="mini-xp"><i style="width:${save.level === 15 ? 100 : (save.xp / xpNeed(save.level)) * 100}%"></i></div><div class="action-readout"><span>${actionHint}</span><small class="${currentAction && !world.combat.canCancel("space") ? "committed" : ""}">${cancelHint}</small></div></div><div class="room-label">${run.room === 3 ? "首领战" : "第 " + (run.room + 1) + " 房间 · " + (world.wave + 1) + "/3 波"}<small>${run.dungeon === 0 && run.room < 3 ? world.combat.snapshot().encounter + " · " : ""}剩余敌人 ${world.enemies.length}</small></div>${boss ? `<div class="boss-panel"><span>♛ ${boss.name} <small>${boss.armor ? "霸体出招" : boss.state === "recover" ? "收招破绽" : "逼近中"}</small></span><div><i style="width:${(boss.hp / boss.max) * 100}%"></i></div></div>` : ""}`;
   document.querySelector("#gold")!.textContent = save.gold.toLocaleString();
+  if (run.dungeon === 0) {
+    let strip = document.querySelector<HTMLElement>("#boon-strip");
+    if (!strip) {
+      strip = document.createElement("div");
+      strip.id = "boon-strip";
+      strip.className = "boon-strip";
+      document.querySelector("#below")!.append(strip);
+    }
+    const chosen = world.combat.boons.selected;
+    const signature = chosen.join("|");
+    if (strip.dataset.signature !== signature) {
+      strip.dataset.signature = signature;
+      strip.innerHTML = `<strong>本局祝福 ${chosen.length}/3</strong>${chosen.map((id) => `<span>${blessings[id].name}</span>`).join("") || "<small>清完房间后，选择你的流派方向</small>"}<button data-action="blessing-info">查看效果</button>`;
+    }
+  }
   document
     .querySelectorAll("[data-room]")
     .forEach((el) =>
@@ -342,7 +359,7 @@ function renderHud() {
       save.level < required
         ? `${required} 级解锁`
         : el.dataset.skill === "k"
-          ? "点按快斩；长按0.8秒蓄力，松开释放；Space取消"
+          ? `点按快斩；长按${world.combat.boons.has("wind-mobility") ? "0.55" : "0.8"}秒蓄力，松开释放；Space取消`
           : el.dataset.skill === "space"
             ? "迎着即将命中的攻击闪避，成功后按J反击"
             : "";
@@ -443,6 +460,7 @@ function reward(e: Enemy) {
   store();
 }
 function finish(win: boolean) {
+  world.combat.clearBlessings();
   resultWin = win;
   bridge.mode = "result";
   bridge.paused = false;
@@ -472,13 +490,24 @@ function renderResult() {
     "<span>所有收益已自动保存</span><span>胜利不是终点。</span>";
   document.querySelector("#below")!.innerHTML = campBelow();
 }
+/** 确认选择后才解除暂停，重复点击无法再次获取同一能力。 */
+function selectBlessing(id: BlessingId) {
+  if (!world.combat.chooseBlessing(id)) return;
+  closeOverlay();
+  notify(`获得本局祝福 · ${blessings[id].name} · 前往右侧传送门或按Enter继续`);
+}
 function openOverlay(type: string) {
+  if (world.combat.boons.offers.length && type !== "blessing") {
+    notify("先选择本房间的祝福，或撤离并保留已拾取奖励。");
+    return;
+  }
   overlay = type;
   bridge.paused = true;
   if (type === "bag" && !selectedItem) selectedItem = save.bag[0]?.id ?? "";
   renderOverlay();
 }
 function closeOverlay() {
+  if (world.combat.boons.offers.length) return;
   overlay = "";
   document.querySelector("#modal-root")!.innerHTML = "";
   bridge.paused = document.hidden;
@@ -497,7 +526,12 @@ function itemDetails(i: Item) {
 function renderOverlay() {
   const root = document.querySelector("#modal-root")!;
   let body = "";
-  if (overlay === "bag") {
+  if (overlay === "blessing") {
+    const boons = world.combat.boons;
+    body = `<div class="blessing-heading"><div class="eyebrow">A SPARK FOR THIS JOURNEY</div><h2>灰烬的馈赠</h2><p>第 ${boons.selected.length + 1} / 3 次选择 · 三选一 · 本局有效</p><small>已选：${boons.selected.map((id) => blessings[id].name).join(" · ") || "尚未选择，本次决定你的方向"}</small></div><div class="blessing-grid">${boons.offers.map((id, index) => `<button class="blessing-card blessing-${blessings[id].group}" data-boon="${id}"><span>${blessingGroups[blessings[id].group]} · <kbd>${index + 1}</kbd></span><h3>${blessings[id].name}</h3><p>${blessings[id].description}</p><small>${boons.affinity(id, save) ? "与你的装备或已选能力呼应" : "探索新的组合方向"}</small><b>选择此祝福 →</b></button>`).join("")}</div><div class="blessing-actions"><button class="button secondary" data-action="reroll-boons" ${boons.rerolls === 0 ? "disabled" : ""}>刷新整组选项 · 剩余 ${boons.rerolls} 次 <kbd>R</kbd></button><small>时间与战斗已暂停 · 等级、装备与掉落永久保留，祝福在本局结束后清除</small><button class="text-button" data-action="abandon">撤离 · 保留奖励</button></div>`;
+  } else if (overlay === "blessing-info") {
+    body = `<div class="modal-title"><h2>本局祝福</h2><button class="icon-button" data-action="close" aria-label="关闭">${icon("cross")}</button></div><div class="settings-content">${world.combat.boons.selected.map((id) => `<div class="active-special"><strong>${blessings[id].name} · ${blessingGroups[blessings[id].group]}</strong><p>${blessings[id].description}</p></div>`).join("") || "每清完一个墓道战斗房间，可从三个祝福中选择一个。"}<p>整局免费刷新一次；本局结束、撤离或刷新页面后祝福清除，已获得的永久奖励仍保留。</p></div>`;
+  } else if (overlay === "bag") {
     const s = stats(save),
       item = save.bag.find((i) => i.id === selectedItem),
       wear = item ? save.equipped[item.slot] : undefined;
@@ -526,7 +560,7 @@ function renderOverlay() {
   } else {
     body = `<div class="pause-content"><div class="eyebrow">TAKE A BREATH</div><h2>篝火仍在等你。</h2><p>冒险已暂停，时间与冷却均已停止。</p><button class="button primary" data-action="close">继续冒险 ${icon("play", 16)}</button><button class="button secondary" data-action="bag">整理装备</button><button class="text-button" data-action="abandon">撤离回营地 · 保留已拾取奖励</button></div>`;
   }
-  root.innerHTML = `<div class="modal-backdrop"><section role="dialog" aria-modal="true" aria-label="${overlay === "bag" ? "行囊与装备" : "游戏菜单"}" class="modal ${overlay === "bag" ? "inventory-modal" : "small-modal"}">${body}</section></div>`;
+  root.innerHTML = `<div class="modal-backdrop"><section role="dialog" aria-modal="true" aria-label="${overlay === "bag" ? "行囊与装备" : "游戏菜单"}" class="modal ${overlay === "bag" ? "inventory-modal" : overlay === "blessing" ? "blessing-modal" : "small-modal"}">${body}</section></div>`;
 }
 function startRun() {
   if (storageBlocked) return;
@@ -539,6 +573,7 @@ function startRun() {
   audio("skill");
 }
 function returnCamp() {
+  world.combat.clearBlessings();
   document.querySelector(".content")!.classList.remove("combat-view");
   bridge.mode = "camp";
   bridge.run = null;
@@ -565,6 +600,10 @@ app.addEventListener("click", (e) => {
     "button,[data-nav]",
   );
   if (!button || button.hasAttribute("disabled")) return;
+  if (button.dataset.boon) {
+    selectBlessing(button.dataset.boon as BlessingId);
+    return;
+  }
   const nav = button.dataset.nav;
   if (nav) {
     openPage(nav);
@@ -633,8 +672,15 @@ app.addEventListener("click", (e) => {
       openOverlay("bag");
       break;
     case "abandon":
+      world.combat.clearBlessings();
       closeOverlay();
       finish(false);
+      break;
+    case "reroll-boons":
+      if (world.combat.boons.reroll(save, world.player.hp)) renderOverlay();
+      break;
+    case "blessing-info":
+      openOverlay("blessing-info");
       break;
     case "equip":
       if (item && item.level <= save.level) {
@@ -733,6 +779,20 @@ app.addEventListener("change", async (e) => {
   }
 });
 window.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (world.combat.boons.offers.length) {
+    if (e.repeat) return;
+    const index = Number(e.code.replace("Digit", "")) - 1;
+    const choice = world.combat.boons.offers[index];
+    if (choice) selectBlessing(choice);
+    else if (
+      e.code === "KeyR" &&
+      world.combat.boons.reroll(save, world.player.hp)
+    )
+      renderOverlay();
+    e.preventDefault();
+    return;
+  }
   if (
     ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
       e.code,

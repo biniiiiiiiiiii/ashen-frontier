@@ -225,6 +225,9 @@ export interface Projectile {
   returning?: boolean;
   returnAt?: number;
   age?: number;
+  delay?: number;
+  burst?: boolean;
+  counterHit?: Set<string>;
 }
 export interface Run {
   dungeon: number;
@@ -246,6 +249,7 @@ export interface Bridge {
   changed: () => void;
   audio: (kind: string) => void;
   toast: (text: string) => void;
+  blessing?: () => void;
 }
 export interface Input {
   x: number;
