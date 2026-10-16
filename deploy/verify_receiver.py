@@ -50,6 +50,14 @@ def verify():
                 pass
             else:
                 raise AssertionError('未拒绝危险路径')
+        package_spec = importlib.util.spec_from_file_location('packager', Path(__file__).with_name('package_release.py'))
+        packager = importlib.util.module_from_spec(package_spec)
+        package_spec.loader.exec_module(packager)
+        first, second = root / 'first.tar.gz', root / 'second.tar.gz'
+        packager.package(target, sha, first)
+        os.utime(str(target / 'index.html'), (1234567890, 1234567890))
+        packager.package(target, sha, second)
+        assert first.read_bytes() == second.read_bytes(), '重复构建的版本包不稳定'
         try:
             os.symlink('releases/' + sha, str(root / 'link-check'))
             (root / 'link-check').unlink()
