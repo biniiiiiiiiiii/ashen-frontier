@@ -9,7 +9,7 @@ page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => {
   if (m.type() === "error") errors.push(m.text());
 });
-const URL = "http://127.0.0.1:4173";
+const URL = process.env.GAME_URL || "http://127.0.0.1:4173";
 await page.goto(URL);
 await page.waitForFunction(() => window.setManualTime);
 let passed = 0;
@@ -116,14 +116,25 @@ async function approach(kind = 0) {
   throw Error("接近超时");
 }
 await fresh();
-await down("d");
-await step(800);
-await up("d");
-await down("w");
-await step(220);
-await up("w");
+for (let i = 0; i < 200; i++) {
+  const s = await read(),
+    archer = s.enemies.find((e) => e.name === "骷髅弓手");
+  const dx = archer.x - s.player.x,
+    dy = archer.y - s.player.y;
+  if (Math.abs(dx) < 270 && Math.abs(dy) < 12) break;
+  for (const [key, held] of [
+    ["d", dx > 240],
+    ["a", dx < -240],
+    ["w", dy < -8],
+    ["s", dy > 8],
+  ])
+    if (held) await down(key);
+    else await up(key);
+  await step(34);
+}
+for (const key of ["a", "d", "w", "s"]) await up(key);
 let target;
-for (let i = 0; i < 140; i++) {
+for (let i = 0; i < 400; i++) {
   const s = await read();
   target = s.enemies.find(
     (e) =>
@@ -131,7 +142,8 @@ for (let i = 0; i < 140; i++) {
       e.state === "windup" &&
       e.stateTime < 0.09 &&
       Math.abs(e.x - s.player.x) < 300 &&
-      Math.abs(e.y - s.player.y) < 35,
+      Math.abs(e.y - s.player.y) < 35 &&
+      !s.player.action,
   );
   if (target) break;
   await step(17);

@@ -2082,3 +2082,58 @@ kbd {
 .skill.executing b {
   display: none;
 }
+/* 墓道遗珍的来源、触发条件与穿戴状态保持清晰可见。 */
+.special-detail,
+.active-special {
+  padding: 12px;
+  margin: 10px 0;
+  border: 1px solid #726544;
+  background: #24291f;
+  color: #e2cc94;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.special-detail p,
+.active-special p {
+  margin: 6px 0;
+}
+.special-detail small {
+  color: #a0a68b;
+}
+.special-catalog {
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px solid #414b39;
+  background: #161e18;
+}
+.special-catalog .panel-title {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.special-catalog .panel-title small {
+  color: #a4ad8e;
+  font-size: 11px;
+}
+.special-catalog > div:last-child {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+.special-catalog article {
+  padding: 14px;
+  border-left: 2px solid #a88d54;
+  background: #20271e;
+}
+.special-catalog article small {
+  color: #b3c5a0;
+}
+.special-catalog h4 {
+  color: #ddc38e;
+  margin: 8px 0;
+}
+.special-catalog p {
+  color: #b4b9a3;
+  font-size: 12px;
+  line-height: 1.8;
+}

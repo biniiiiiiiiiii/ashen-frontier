@@ -2,14 +2,22 @@ import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 fs.mkdirSync("checks/artifacts/actions", { recursive: true });
-const browser = await chromium.launch({ channel: process.env.GAME_BROWSER || "msedge", headless: true });
-const page = await browser.newPage({ viewport: process.env.GAME_VIEWPORT === "large" ? { width: 1920, height: 1080 } : { width: 1366, height: 768 } });
+const browser = await chromium.launch({
+  channel: process.env.GAME_BROWSER || "msedge",
+  headless: true,
+});
+const page = await browser.newPage({
+  viewport:
+    process.env.GAME_VIEWPORT === "large"
+      ? { width: 1920, height: 1080 }
+      : { width: 1366, height: 768 },
+});
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => {
   if (m.type() === "error") errors.push(m.text());
 });
-const URL = "http://127.0.0.1:4173";
+const URL = process.env.GAME_URL || "http://127.0.0.1:4173";
 await page.goto(URL);
 await page.waitForFunction(() => window.setManualTime);
 let passed = 0;
@@ -158,13 +166,18 @@ await check(
 await fresh();
 await down("k");
 let waveIds = new Set();
-for (let i = 0; i < 70; i++) {
+for (let i = 0; i < 9; i++) {
   await step(100);
   for (const p of (await read()).projectiles)
     if (p.kind === "wave") waveIds.add(p.id);
 }
 await up("k");
-await check(waveIds.size === 1, "按住技能键不会冷却结束后自动连发");
+await check(waveIds.size === 0, "按住K只蓄力，不提前释放或消耗冷却");
+await step(250);
+await check(
+  (await read()).projectiles.some((p) => p.kind === "wave" && p.charged),
+  "松开K后释放满蓄剑气",
+);
 await fresh();
 await step(800);
 let before = await read();
@@ -215,7 +228,7 @@ await step(34);
 s = await read();
 await check(s.player.action.kind === "dodge", "重技能收招末段可缓冲闪避");
 await fresh();
-for (let i = 0; i < 60; i++) {
+for (let i = 0; i < 100; i++) {
   await step(50);
   s = await read();
   if (s.projectiles.some((p) => p.kind === "arrow")) break;
@@ -231,37 +244,24 @@ await step(550);
 await up("w");
 await step(300);
 await check((await read()).player.hp === hp, "纵向走位可躲开已经射出的箭");
-await fresh({
-  ...fixture,
-  equipped: {
-    ...fixture.equipped,
-    weapon: { ...fixture.equipped.weapon, base: 600 },
-  },
-  bag: [{ ...fixture.equipped.weapon, id: "weak", base: 5 }],
-});
-await down("w");
-await step(220);
-await up("w");
-await tap("k", 1200);
-await page.keyboard.press("b");
-await page.click('[data-item="weak"]');
-await page.click('[data-action="equip"]');
-await page.keyboard.press("b");
-const targetId = await approach();
+await fresh();
+let targetId = await approach();
 await down("j");
 let seen = new Set();
 for (let i = 0; i < 90; i++) {
   await step(17);
   s = await read();
   if (s.player.action) seen.add(s.player.action.kind);
-  const e = s.enemies.find((e) => e.id === targetId);
+  const e = s.enemies.find((e) => e.state === "hurt" && e.hitstun > 0);
   if (
     e?.state === "hurt" &&
     s.player.action?.kind === "heavy" &&
     s.player.action.phase === "active" &&
     s.player.action.time > 0.23
-  )
+  ) {
+    targetId = e.id;
     break;
+  }
 }
 await up("j");
 s = await read();

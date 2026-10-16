@@ -1,6 +1,34 @@
 export type Slot = "weapon" | "head" | "chest" | "legs" | "ring" | "charm";
 export type Stat =
   "attack" | "health" | "defense" | "crit" | "speed" | "skill" | "cdr";
+export type SpecialId = "reprisal" | "returning" | "wildfire";
+/** 特效为固定机制，随机属性仍按对应装备部位生成。 */
+export const specialItems: Record<
+  SpecialId,
+  { name: string; slot: Slot; build: string; description: string }
+> = {
+  reprisal: {
+    name: "曙光回击",
+    slot: "weapon",
+    build: "反击剑士",
+    description:
+      "闪避反击额外发射一道穿透剑气（130%攻击）；可搭配狂战两件，或风行四件。",
+  },
+  returning: {
+    name: "回风坠饰",
+    slot: "charm",
+    build: "回风剑术",
+    description:
+      "满蓄裂风斩在飞行途中折返，回程可再次命中同一敌人，造成60%剑气伤害；风行四件效果同时生效。",
+  },
+  wildfire: {
+    name: "燎原指环",
+    slot: "ring",
+    build: "余烬燎原",
+    description:
+      "技能与反击命中附加4秒灼烧；灼烧敌人死亡时向130范围传播灼烧并造成65%攻击伤害，可连锁。",
+  },
+};
 export interface Item {
   id: string;
   name: string;
@@ -11,6 +39,7 @@ export interface Item {
   affixes: { stat: Stat; value: number }[];
   set?: number;
   locked: boolean;
+  special?: SpecialId;
 }
 export interface Save {
   version: 1;
@@ -24,6 +53,7 @@ export interface Save {
   settings: { sound: boolean; shake: boolean };
   kills: number;
   runs: number;
+  specialIntro?: boolean;
 }
 export interface Dungeon {
   name: string;
@@ -117,8 +147,15 @@ function createItemId(): string {
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
 }
 
-export function createItem(level: number, quality: number, dungeon = -1): Item {
-  const slotIndex = Math.floor(Math.random() * 6),
+export function createItem(
+  level: number,
+  quality: number,
+  dungeon = -1,
+  fixedSlot?: Slot,
+): Item {
+  const slotIndex = fixedSlot
+      ? slots.indexOf(fixedSlot)
+      : Math.floor(Math.random() * 6),
     slot = slots[slotIndex];
   const set =
     quality >= 2 && dungeon >= 0 && Math.random() < 0.65 ? dungeon : undefined;
@@ -166,6 +203,19 @@ export function createItem(level: number, quality: number, dungeon = -1): Item {
     locked: false,
   };
 }
+/** 特效装备仅在穿戴时生效，保留旧装备和旧存档结构。 */
+export function createSpecialItem(
+  level: number,
+  quality: number,
+  special: SpecialId,
+): Item {
+  const template = specialItems[special];
+  return {
+    ...createItem(level, Math.max(2, quality), -1, template.slot),
+    name: template.name,
+    special,
+  };
+}
 export function stats(save: Save) {
   const result = {
     attack: 17 + save.level * 4,
@@ -190,7 +240,10 @@ export function stats(save: Save) {
   if (counts[1] >= 2) result.cdr += 10;
   result.cdr = Math.min(30, result.cdr);
   result.crit = Math.min(60, result.crit);
-  return { ...result, counts };
+  const specials = Object.values(save.equipped).flatMap((item) =>
+    item?.special ? [item.special] : [],
+  );
+  return { ...result, counts, specials };
 }
 export function freshSave(): Save {
   const sword = createItem(1, 0);

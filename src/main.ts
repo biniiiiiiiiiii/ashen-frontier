@@ -4,6 +4,9 @@ import "./style.css";
 import {
   colors,
   createItem,
+  createSpecialItem,
+  specialItems,
+  type SpecialId,
   dungeons,
   freshSave,
   price,
@@ -138,7 +141,7 @@ app.innerHTML = `<aside class="sidebar"><a class="brand" href="#" aria-label="�
   )
   .join(
     "",
-  )}</nav><div class="sidebar-bottom"><div class="world-status"><i></i> 离线冒险 · 本地存档</div><button class="nav-item" data-action="settings">${icon("settings")}<span>游戏设置</span></button><div class="version">VERSION 1.1 <span>单人冒险</span></div></div></aside><main><header><div class="breadcrumb">灰烬边境 <span>/</span> <b id="page-name">冒险营地</b></div><div class="header-right"><span class="save-tag">${icon("check", 13)} 自动保存</span><span class="wallet">${icon("coin", 17)} <b id="gold">120</b></span><span class="avatar">旅</span></div></header><div class="content"><div id="page-top"></div><section class="stage"><div id="game"></div><div id="scene-ui"></div><div class="scene-bottom" id="scene-bottom"></div></section><div id="below"></div><footer><span>每一件遗落的装备，都藏着一段未完的故事。</span><span>W A S D 移动 <i>·</i> J 攻击 <i>·</i> SPACE 闪避</span></footer></div></main><div id="modal-root"></div><div id="toast" role="status"></div>`;
+  )}</nav><div class="sidebar-bottom"><div class="world-status"><i></i> 离线冒险 · 本地存档</div><button class="nav-item" data-action="settings">${icon("settings")}<span>游戏设置</span></button><div class="version">VERSION 1.2 <span>单人冒险</span></div></div></aside><main><header><div class="breadcrumb">灰烬边境 <span>/</span> <b id="page-name">冒险营地</b></div><div class="header-right"><span class="save-tag">${icon("check", 13)} 自动保存</span><span class="wallet">${icon("coin", 17)} <b id="gold">120</b></span><span class="avatar">旅</span></div></header><div class="content"><div id="page-top"></div><section class="stage"><div id="game"></div><div id="scene-ui"></div><div class="scene-bottom" id="scene-bottom"></div></section><div id="below"></div><footer><span>每一件遗落的装备，都藏着一段未完的故事。</span><span>W A S D 移动 <i>·</i> J 攻击 <i>·</i> SPACE 闪避</span></footer></div></main><div id="modal-root"></div><div id="toast" role="status"></div>`;
 new Phaser.Game({
   type: Phaser.CANVAS,
   parent: "game",
@@ -200,7 +203,7 @@ function render() {
     bottom.innerHTML = `<div class="room-track">${[0, 1, 2, 3].map((n) => `<span data-room="${n}">${n === 3 ? "♜" : "◇"} ${n === 3 ? "首领" : "房间 " + (n + 1)}</span>`).join("<i>—</i>")}</div><span id="run-time">00:00</span>`;
     below.innerHTML = `<div class="combat-bar"><div class="hero-mini">${icon("helm", 28)}<div><strong>灰烬剑士</strong><small>Lv. ${save.level} · 旅人</small></div></div><div id="skills">${[
       ["J", "三段斩", "j", 1],
-      ["K", "裂风斩", "k", 1],
+      ["K", "蓄力裂风", "k", 1],
       ["L", "旋刃", "l", 3],
       ["U", "破阵突袭", "u", 5],
       ["SPACE", "闪避", "space", 1],
@@ -235,6 +238,15 @@ function render() {
       )}</div><div class="expedition-options"><div><h4>${dungeons[selectedDungeon].name}</h4><p>3 个战斗房间 + 首领战 · 预计 3–5 分钟</p></div><div class="segmented"><button data-difficulty="normal" class="${!hard ? "selected" : ""}">普通</button><button data-difficulty="hard" class="${hard ? "selected" : ""}" ${!save.cleared.includes(selectedDungeon) ? "disabled" : ""}>困难 ${!save.cleared.includes(selectedDungeon) ? "♙" : ""}</button></div><button id="enter-dungeon" class="button primary" data-action="enter" ${!isUnlocked(selectedDungeon) ? "disabled" : ""}>进入地下城 ${icon("arrow", 18)}</button></div></div>`;
     bottom.innerHTML = `<span>${icon("star", 14)} 困难首领十次内必得传说装备</span><span>没有体力限制 · 随时再战</span>`;
     below.innerHTML = `<div class="info-strip">${icon("bag", 24)}<div><strong>为你的流派而战</strong><p>墓道偏向狂战、矿坑偏向风行、圣所偏向余烬。紫色及以上装备有机会属于套装。</p></div><span>探索 · 收集 · 成长</span></div>`;
+    if (selectedDungeon === 0)
+      below.innerHTML += `<section class="special-catalog"><div class="panel-title"><span>墓道遗珍 · 改变你的打法</span><small>首次击败骸骨守卫必得曙光回击；后续普通35% / 困难55%掉落一件随机遗珍</small></div><div>${Object.values(
+        specialItems,
+      )
+        .map(
+          (item) =>
+            `<article><small>${item.build}</small><h4>${item.name}</h4><p>${item.description}</p></article>`,
+        )
+        .join("")}</div></section>`;
   } else {
     ui.innerHTML = `<div class="merchant-overlay"><div class="eyebrow">金钱买不到命运，但可以买一次机会</div><h2>流浪商人的珍藏</h2><p>“从遗迹里捎来的好东西。想试试手气吗，旅人？”</p><div class="merchant-item">${icon("bag", 64)}<div><span>封存的旅人装备</span><h3>与你等级相同的随机装备</h3><p>精良 85% / 史诗 15% · 不含套装与传说</p><button class="button primary" data-action="buy">${icon("coin", 18)} ${shopCost()} 金币 · 购买一件</button></div></div><small>背包 ${save.bag.length} / 60 · 购买后可在行囊中查看</small></div>`;
     bottom.innerHTML =
@@ -274,8 +286,12 @@ function renderHud() {
           ? "收招"
           : "";
   const actionHint = currentAction
-    ? `${actionNames[currentAction.kind]} · ${phaseName}`
-    : "走位 · 寻找机会";
+    ? currentAction.kind === "charging"
+      ? `凝风蓄力 ${Math.min(100, Math.floor((currentAction.time / 0.8) * 100))}%`
+      : `${currentAction.charged ? "满蓄 · " : ""}${actionNames[currentAction.kind]} · ${phaseName}`
+    : world.player.counter > 0
+      ? "精准闪避成功 · J 强化反击"
+      : "长按K蓄力 · 松开释放";
   const cancelHint = currentAction
     ? world.combat.canCancel("space")
       ? "可闪避"
@@ -284,8 +300,10 @@ function renderHud() {
         : currentAction.kind === "dodge"
           ? "闪避中"
           : "出招中"
-    : "普攻可衔接技能";
-  el.innerHTML = `<div class="health-panel"><div><strong>灰烬剑士</strong><span>Lv.${save.level}</span></div><div class="hp-track"><i style="width:${(world.player.hp / s.health) * 100}%"></i><span>${Math.ceil(world.player.hp)} / ${s.health}</span></div><div class="mini-xp"><i style="width:${save.level === 15 ? 100 : (save.xp / xpNeed(save.level)) * 100}%"></i></div><div class="action-readout"><span>${actionHint}</span><small class="${currentAction && !world.combat.canCancel("space") ? "committed" : ""}">${cancelHint}</small></div></div><div class="room-label">${run.room === 3 ? "首领战" : "第 " + (run.room + 1) + " 房间 · " + (world.wave + 1) + "/3 波"}<small>剩余敌人 ${world.enemies.length}</small></div>${boss ? `<div class="boss-panel"><span>♛ ${boss.name} <small>${boss.armor ? "霸体出招" : boss.state === "recover" ? "收招破绽" : "逼近中"}</small></span><div><i style="width:${(boss.hp / boss.max) * 100}%"></i></div></div>` : ""}`;
+    : world.player.counter > 0
+      ? `反击剩余 ${world.player.counter.toFixed(1)}s`
+      : "Space闪避 · 抓住破绽";
+  el.innerHTML = `<div class="health-panel"><div><strong>灰烬剑士</strong><span>Lv.${save.level}</span></div><div class="hp-track"><i style="width:${(world.player.hp / s.health) * 100}%"></i><span>${Math.ceil(world.player.hp)} / ${s.health}</span></div><div class="mini-xp"><i style="width:${save.level === 15 ? 100 : (save.xp / xpNeed(save.level)) * 100}%"></i></div><div class="action-readout"><span>${actionHint}</span><small class="${currentAction && !world.combat.canCancel("space") ? "committed" : ""}">${cancelHint}</small></div></div><div class="room-label">${run.room === 3 ? "首领战" : "第 " + (run.room + 1) + " 房间 · " + (world.wave + 1) + "/3 波"}<small>${run.dungeon === 0 && run.room < 3 ? world.combat.snapshot().encounter + " · " : ""}剩余敌人 ${world.enemies.length}</small></div>${boss ? `<div class="boss-panel"><span>♛ ${boss.name} <small>${boss.armor ? "霸体出招" : boss.state === "recover" ? "收招破绽" : "逼近中"}</small></span><div><i style="width:${(boss.hp / boss.max) * 100}%"></i></div></div>` : ""}`;
   document.querySelector("#gold")!.textContent = save.gold.toLocaleString();
   document
     .querySelectorAll("[data-room]")
@@ -302,7 +320,7 @@ function renderHud() {
     el.querySelector("b")!.textContent = cd > 0.1 ? cd.toFixed(1) : "";
     el.classList.toggle("cooling", cd > 0.1);
     const actionKey = currentAction
-      ? currentAction.kind === "wave"
+      ? ["wave", "charging"].includes(currentAction.kind)
         ? "k"
         : currentAction.kind === "spin"
           ? "l"
@@ -310,7 +328,9 @@ function renderHud() {
             ? "u"
             : currentAction.kind === "dodge"
               ? "space"
-              : ["light1", "light2", "heavy"].includes(currentAction.kind)
+              : ["light1", "light2", "heavy", "counter"].includes(
+                    currentAction.kind,
+                  )
                 ? "j"
                 : ""
       : null;
@@ -318,7 +338,14 @@ function renderHud() {
     const required =
       el.dataset.skill === "l" ? 3 : el.dataset.skill === "u" ? 5 : 1;
     el.classList.toggle("locked", save.level < required);
-    el.title = save.level < required ? `${required} 级解锁` : "";
+    el.title =
+      save.level < required
+        ? `${required} 级解锁`
+        : el.dataset.skill === "k"
+          ? "点按快斩；长按0.8秒蓄力，松开释放；Space取消"
+          : el.dataset.skill === "space"
+            ? "迎着即将命中的攻击闪避，成功后按J反击"
+            : "";
   });
 }
 function formatTime(seconds: number) {
@@ -400,7 +427,18 @@ function reward(e: Enemy) {
         Math.min(save.level, base + Math.floor(Math.random() * 4) + run.room),
       ),
     );
-    addItem(createItem(level, q, run.dungeon));
+    if (
+      e.boss &&
+      run.dungeon === 0 &&
+      (!save.specialIntro || Math.random() < (run.hard ? 0.55 : 0.35))
+    ) {
+      const choices: SpecialId[] = ["reprisal", "returning", "wildfire"];
+      const special = save.specialIntro
+        ? choices[Math.floor(Math.random() * choices.length)]
+        : "reprisal";
+      addItem(createSpecialItem(level, q, special));
+      save.specialIntro = true;
+    } else addItem(createItem(level, q, run.dungeon));
   }
   store();
 }
@@ -447,8 +485,14 @@ function closeOverlay() {
   store();
   renderHud();
 }
+/** 装备详情和比较面板共用固定特效说明。 */
+function specialDetails(item: Item) {
+  if (!item.special) return "";
+  const special = specialItems[item.special];
+  return `<div class="special-detail"><strong>◆ ${special.build}</strong><p>${special.description}</p><small>来源：枯骨墓道首领 · 紫色及以上 · 独立特效装备不计入套装件数</small></div>`;
+}
 function itemDetails(i: Item) {
-  return `<span class="item-quality" style="color:${colors[i.quality]}">${qualities[i.quality]} · ${slotNames[i.slot]} · Lv.${i.level}</span><h3 style="color:${colors[i.quality]}">${escapeText(i.name)}</h3><div class="item-base">${i.slot === "weapon" || i.slot === "ring" || i.slot === "charm" ? "攻击" : "防御"} <b>+${i.base}</b></div><div class="affixes">${i.affixes.map((a) => `<p>${statNames[a.stat]} <b>+${a.value}${["crit", "speed", "skill", "cdr"].includes(a.stat) ? "%" : ""}</b></p>`).join("") || "<p>无额外词条</p>"}</div>${i.set !== undefined ? `<div class="set-detail"><strong>${sets[i.set].name}套装</strong><p>2 件：${sets[i.set].two}</p><p>4 件：${sets[i.set].four}</p></div>` : ""}`;
+  return `<span class="item-quality" style="color:${colors[i.quality]}">${qualities[i.quality]} · ${slotNames[i.slot]} · Lv.${i.level}</span><h3 style="color:${colors[i.quality]}">${escapeText(i.name)}</h3><div class="item-base">${i.slot === "weapon" || i.slot === "ring" || i.slot === "charm" ? "攻击" : "防御"} <b>+${i.base}</b></div><div class="affixes">${i.affixes.map((a) => `<p>${statNames[a.stat]} <b>+${a.value}${["crit", "speed", "skill", "cdr"].includes(a.stat) ? "%" : ""}</b></p>`).join("") || "<p>无额外词条</p>"}</div>${specialDetails(i)}${i.set !== undefined ? `<div class="set-detail"><strong>${sets[i.set].name}套装</strong><p>2 件：${sets[i.set].two}</p><p>4 件：${sets[i.set].four}</p></div>` : ""}`;
 }
 function renderOverlay() {
   const root = document.querySelector("#modal-root")!;
@@ -464,19 +508,19 @@ function renderOverlay() {
       })
       .join(
         "",
-      )}</div><div class="stat-grid">${(["attack", "health", "defense", "crit", "speed", "skill", "cdr"] as const).map((k) => `<span>${statNames[k]}<b>${s[k]}${["crit", "speed", "skill", "cdr"].includes(k) ? "%" : ""}</b></span>`).join("")}</div><div class="set-counts">${sets.map((set, i) => `<span class="${s.counts[i] >= 2 ? "lit" : ""}" title="${set.two}；${set.four}">${set.name} ${s.counts[i]}/4</span>`).join("")}</div></div><div class="bag-column"><div class="bag-toolbar"><span>全部装备 <small>按掉落顺序</small></span><button data-action="sell-common">出售白蓝装备</button></div><div class="bag-grid">${Array.from(
+      )}</div><div class="stat-grid">${(["attack", "health", "defense", "crit", "speed", "skill", "cdr"] as const).map((k) => `<span>${statNames[k]}<b>${s[k]}${["crit", "speed", "skill", "cdr"].includes(k) ? "%" : ""}</b></span>`).join("")}</div><div class="set-counts">${sets.map((set, i) => `<span class="${s.counts[i] >= 2 ? "lit" : ""}" title="${set.two}；${set.four}">${set.name} ${s.counts[i]}/4</span>`).join("")}</div>${s.specials.map((id) => `<div class="active-special"><strong>◆ ${specialItems[id].build}</strong><p>${specialItems[id].description}</p></div>`).join("")}</div><div class="bag-column"><div class="bag-toolbar"><span>全部装备 <small>按掉落顺序</small></span><button data-action="sell-common">出售白蓝装备</button></div><div class="bag-grid">${Array.from(
       { length: 60 },
       (_, n) => {
         const i = save.bag[n];
         return i
-          ? `<button class="bag-item ${selectedItem === i.id ? "selected" : ""}" data-item="${i.id}" style="--quality:${colors[i.quality]}" title="${escapeText(i.name)}">${icon(slotIcon(i.slot), 26)}<small>${i.level}</small>${i.locked ? "<i>◆</i>" : ""}</button>`
+          ? `<button class="bag-item ${selectedItem === i.id ? "selected" : ""}" data-item="${i.id}" style="--quality:${colors[i.quality]}" title="${escapeText(i.name)}${i.special ? " · 特效装备" : ""}">${icon(slotIcon(i.slot), 26)}<small>${i.level}</small>${i.locked ? "<i>◆</i>" : ""}</button>`
           : '<div class="bag-empty"></div>';
       },
     ).join(
       "",
-    )}</div><p class="bag-help">选择装备查看属性 · 锁定装备不会被出售</p></div><div class="detail-column">${item ? `${itemDetails(item)}<div class="comparison"><small>当前穿戴</small>${wear ? `<strong style="color:${colors[wear.quality]}">${escapeText(wear.name)} · Lv.${wear.level}</strong><p>基础属性差值 <b class="${item.base >= wear.base ? "positive" : "negative"}">${item.base >= wear.base ? "+" : ""}${item.base - wear.base}</b></p><div class="compare-affixes">${wear.affixes.map((a) => `<p>${statNames[a.stat]} +${a.value}${["crit", "speed", "skill", "cdr"].includes(a.stat) ? "%" : ""}</p>`).join("") || "<p>无额外词条</p>"}${wear.set !== undefined ? `<p>${sets[wear.set].name}：${sets[wear.set].two} / ${sets[wear.set].four}</p>` : ""}</div>` : "<p>该部位尚未穿戴装备</p>"}</div><button class="button primary" data-action="equip" ${item.level > save.level ? "disabled" : ""}>${item.level > save.level ? "需要等级 " + item.level : "穿戴装备"}</button><div class="item-actions"><button data-action="lock">${icon("lock", 14)} ${item.locked ? "解锁" : "锁定"}</button><button data-action="sell" ${item.locked ? "disabled" : ""}>出售 · ${price(item)} 金币</button></div>` : '<div class="empty-details">' + icon("bag", 42) + "<h3>等待新的战利品</h3><p>探索地下城，收集属于你的装备。</p></div>"}</div></div>`;
+    )}</div><p class="bag-help">选择装备查看属性 · 锁定装备不会被出售</p></div><div class="detail-column">${item ? `${itemDetails(item)}<div class="comparison"><small>当前穿戴</small>${wear ? `<strong style="color:${colors[wear.quality]}">${escapeText(wear.name)} · Lv.${wear.level}</strong><p>基础属性差值 <b class="${item.base >= wear.base ? "positive" : "negative"}">${item.base >= wear.base ? "+" : ""}${item.base - wear.base}</b></p><div class="compare-affixes">${wear.affixes.map((a) => `<p>${statNames[a.stat]} +${a.value}${["crit", "speed", "skill", "cdr"].includes(a.stat) ? "%" : ""}</p>`).join("") || "<p>无额外词条</p>"}${specialDetails(wear)}${wear.set !== undefined ? `<p>${sets[wear.set].name}：${sets[wear.set].two} / ${sets[wear.set].four}</p>` : ""}</div>` : "<p>该部位尚未穿戴装备</p>"}</div><button class="button primary" data-action="equip" ${item.level > save.level ? "disabled" : ""}>${item.level > save.level ? "需要等级 " + item.level : "穿戴装备"}</button><div class="item-actions"><button data-action="lock">${icon("lock", 14)} ${item.locked ? "解锁" : "锁定"}</button><button data-action="sell" ${item.locked ? "disabled" : ""}>出售 · ${price(item)} 金币</button></div>` : '<div class="empty-details">' + icon("bag", 42) + "<h3>等待新的战利品</h3><p>探索地下城，收集属于你的装备。</p></div>"}</div></div>`;
   } else if (overlay === "settings") {
-    body = `<div class="modal-title"><h2>游戏设置</h2><button class="icon-button" data-action="close" aria-label="关闭">${icon("cross")}</button></div><div class="settings-content"><label><div><strong>战斗音效</strong><p>攻击、受击与装备掉落的声音</p></div><input type="checkbox" data-setting="sound" ${save.settings.sound ? "checked" : ""}></label><label><div><strong>屏幕震动</strong><p>命中与受击时的轻微反馈</p></div><input type="checkbox" data-setting="shake" ${save.settings.shake ? "checked" : ""}></label><div class="controls-list"><h4>冒险者操作指南</h4><p>WASD / 方向键 移动 · J 普攻 · K 裂风斩</p><p>L 旋刃（3级） · U 突袭（5级） · Space 闪避</p><p>B 背包 · Esc 暂停 · Enter 下一房间 · F 全屏</p><small>进度保存在当前浏览器。清理网站数据会删除存档。</small></div><div class="settings-actions"><button class="button secondary" data-action="export">导出存档</button><label class="button secondary">导入存档<input type="file" id="import-save" accept="application/json" hidden></label></div></div>`;
+    body = `<div class="modal-title"><h2>游戏设置</h2><button class="icon-button" data-action="close" aria-label="关闭">${icon("cross")}</button></div><div class="settings-content"><label><div><strong>战斗音效</strong><p>攻击、受击与装备掉落的声音</p></div><input type="checkbox" data-setting="sound" ${save.settings.sound ? "checked" : ""}></label><label><div><strong>屏幕震动</strong><p>命中与受击时的轻微反馈</p></div><input type="checkbox" data-setting="shake" ${save.settings.shake ? "checked" : ""}></label><div class="controls-list"><h4>冒险者操作指南</h4><p>WASD / 方向键 移动 · J 普攻</p><p>K 点按快斩，长按0.8秒蓄力，松开释放；蓄力中Space取消。</p><p>迎着即将命中的攻击闪避，触发精准闪避；1.8秒内J强化反击。</p><p>L 旋刃（3级） · U 突袭（5级） · Space 闪避</p><p>B 背包 · Esc 暂停 · Enter 下一房间 · F 全屏</p><small>进度保存在当前浏览器。清理网站数据会删除存档。</small></div><div class="settings-actions"><button class="button secondary" data-action="export">导出存档</button><label class="button secondary">导入存档<input type="file" id="import-save" accept="application/json" hidden></label></div></div>`;
   } else if (overlay === "corrupt") {
     body = `<div class="modal-title"><h2>存档需要处理</h2></div><div class="settings-content"><p>当前存档及备份无法读取。原始数据尚未覆盖，下载备份后可以保留原始记录。</p><div class="settings-actions"><button class="button secondary" data-action="export-raw">下载原始存档</button><button class="button primary" data-action="reset-corrupt">重新开始</button></div></div>`;
   } else {

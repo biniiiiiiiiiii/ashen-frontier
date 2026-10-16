@@ -1,4 +1,4 @@
-import { freshSave, slots, type Save, type Item } from "./data";
+import { freshSave, slots, specialItems, type Save, type Item } from "./data";
 const key = "ashen-frontier-v1";
 export let storageWarning = "";
 function validItem(value: unknown): value is Item {
@@ -28,7 +28,12 @@ function validItem(value: unknown): value is Item {
           "cdr",
         ].includes(a.stat) && Number.isFinite(a.value),
     ) &&
-    (i.set === undefined || [0, 1, 2].includes(i.set))
+    (i.set === undefined || [0, 1, 2].includes(i.set)) &&
+    (i.special === undefined ||
+      (Object.hasOwn(specialItems, i.special) &&
+        specialItems[i.special].slot === i.slot &&
+        i.quality >= 2 &&
+        i.set === undefined))
   );
 }
 export function validateSave(value: unknown): value is Save {
@@ -36,6 +41,7 @@ export function validateSave(value: unknown): value is Save {
   const s = value as Save;
   return (
     s.version === 1 &&
+    (s.specialIntro === undefined || typeof s.specialIntro === "boolean") &&
     Number.isInteger(s.level) &&
     s.level >= 1 &&
     s.level <= 15 &&

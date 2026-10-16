@@ -4,7 +4,7 @@ import { chromium } from "playwright";
 import assert from "node:assert/strict";
 const browser = await chromium.launch({ channel: "msedge", headless: true });
 const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
-await page.goto("http://127.0.0.1:4173");
+await page.goto(process.env.GAME_URL || "http://127.0.0.1:4173");
 await page.waitForFunction(() => window.render_game_to_text);
 const slots = ["weapon", "head", "chest", "legs", "ring", "charm"];
 const item = (slot, i, set) => ({
@@ -42,6 +42,7 @@ async function install(s) {
   }, s);
   await page.reload();
   await page.waitForFunction(() => window.render_game_to_text);
+  await page.evaluate(() => window.setManualTime(true));
   await page.evaluate(
     () =>
       (Math.random = (() => {
@@ -58,8 +59,9 @@ async function skill(set) {
   await page.click("#enter-dungeon");
   const b = await page.evaluate(() => JSON.parse(window.render_game_to_text()));
   await page.keyboard.down("k");
-  await page.evaluate(() => window.advanceTime(1250));
+  await page.evaluate(() => window.advanceTime(17));
   await page.keyboard.up("k");
+  await page.evaluate(() => window.advanceTime(1250));
   const a = await page.evaluate(() => JSON.parse(window.render_game_to_text()));
   return Math.max(...a.enemies.map((e, i) => b.enemies[i].hp - e.hp));
 }
@@ -85,8 +87,9 @@ await page.evaluate(
 await page.click('[data-nav="dungeons"]');
 await page.click("#enter-dungeon");
 await page.keyboard.down("k");
-await page.evaluate(() => window.advanceTime(1250));
+await page.evaluate(() => window.advanceTime(17));
 await page.keyboard.up("k");
+await page.evaluate(() => window.advanceTime(1250));
 const s = await page.evaluate(() =>
   JSON.parse(localStorage.getItem("ashen-frontier-v1")),
 );

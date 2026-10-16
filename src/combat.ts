@@ -1,4 +1,5 @@
 import { dungeons, stats } from "./data";
+import { tombWaves, tombWaveNames, enemyArea } from "./encounters";
 import {
   actions,
   type AttackKey,
@@ -15,12 +16,13 @@ import {
 export { actions, actionNames } from "./combat-model";
 export type { Bridge, Enemy, Run, Input } from "./combat-model";
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
+const runIsTomb = (bridge: Bridge) => bridge.run?.dungeon === 0;
 const noise = (i: number) => {
   const n = Math.sin(i * 127.1 + 311.7) * 43758.5453;
   return n - Math.floor(n);
 };
 const basic = (kind: ActionKind) =>
-  ["light1", "light2", "heavy"].includes(kind);
+  ["light1", "light2", "heavy", "counter"].includes(kind);
 /** 战斗控制器负责动作、实体弹道和受击状态，不直接绘制场景。 */
 export class Combat {
   player = {
@@ -37,6 +39,7 @@ export class Combat {
     walk: 0,
     vx: 0,
     vy: 0,
+    counter: 0,
   };
   enemies: Enemy[] = [];
   hazards: Hazard[] = [];
@@ -65,6 +68,7 @@ export class Combat {
   canCancel(key: AttackKey) {
     const a = this.player.action;
     if (!a) return true;
+    if (a.kind === "charging") return key === "space";
     if (a.kind === "hurt" || a.kind === "dodge") return false;
     if (basic(a.kind))
       return key === "space"
@@ -100,6 +104,7 @@ export class Combat {
       walk: 0,
       vx: 0,
       vy: 0,
+      counter: 0,
     });
     this.cooldowns = { j: 0, k: 0, l: 0, u: 0, space: 0 };
     this.previous.clear();
@@ -116,18 +121,35 @@ export class Combat {
     this.projectiles = [];
     this.door = false;
     this.player.action = null;
+    this.player.counter = 0;
     this.buffer = null;
     const boss = run.room === 3,
-      n = boss ? 1 : 4 + run.room * 2,
+      formation =
+        run.dungeon === 0 && !boss ? tombWaves[run.room][this.wave] : null,
+      seed = run.room * 19 + this.wave * 31,
+      n = boss ? 1 : (formation?.length ?? 4 + run.room * 2),
       scale = (1 + run.dungeon * 1.7) * (run.hard ? 1.65 : 1);
     for (let i = 0; i < n; i++) {
-      const variant = run.dungeon === 0 ? (i % 3 === 1 ? 1 : 0) : i % 2;
-      const elite = !boss && run.room === 2 && i === 0,
+      const variant =
+        formation?.[i] ?? (run.dungeon === 0 ? (i % 3 === 1 ? 1 : 0) : i % 2);
+      const elite =
+          !boss &&
+          run.room === 2 &&
+          i === 0 &&
+          (run.dungeon !== 0 || this.wave !== 1),
         hp = Math.round((boss ? 3400 : elite ? 550 : 285) * scale);
       this.enemies.push({
         id: "e" + ++this.serial,
-        x: boss ? 820 : 580 + noise(i + run.room * 9) * 370,
-        y: boss ? 440 : 365 + noise(i + 37) * 160,
+        x: boss
+          ? 820
+          : formation
+            ? (variant === 1 ? 790 : 510) + noise(i + seed) * 180
+            : 580 + noise(i + run.room * 9) * 370,
+        y: boss
+          ? 440
+          : formation
+            ? 355 + noise(i + 37 + seed) * 180
+            : 365 + noise(i + 37) * 160,
         hp,
         max: hp,
         kind: run.dungeon * 2 + variant,
@@ -140,7 +162,9 @@ export class Combat {
         phase: 0,
         name: boss
           ? dungeons[run.dungeon].boss
-          : dungeons[run.dungeon].monsters[variant],
+          : elite && run.dungeon === 0
+            ? "裂骨先锋"
+            : dungeons[run.dungeon].monsters[variant],
         state: "idle",
         stateTime: 0,
         move: "slash",
@@ -195,6 +219,7 @@ export class Combat {
     for (const key of Object.keys(this.cooldowns) as AttackKey[])
       this.cooldowns[key] = Math.max(0, this.cooldowns[key] - dt);
     p.inv = Math.max(0, p.inv - dt);
+    p.counter = Math.max(0, p.counter - dt);
     p.comboTimer -= dt;
     if (p.comboTimer <= 0 && !p.action) p.combo = 0;
     const pending = this.buffer;
@@ -235,7 +260,7 @@ export class Combat {
         p.hp = Math.min(s.health, p.hp + s.health * 0.12);
         this.spawn();
         this.bridge.toast(
-          `增援来袭 · 第 ${this.wave + 1} / 3 波 · 恢复少量生命`,
+          `增援来袭 · ${run.dungeon === 0 ? tombWaveNames[run.room][this.wave] : `第 ${this.wave + 1} / 3 波`} · 恢复少量生命`,
         );
         return;
       }
@@ -268,12 +293,18 @@ export class Combat {
       s = stats(this.bridge.save);
     let kind: ActionKind;
     if (key === "j") {
-      p.combo = p.comboTimer > 0 ? (p.combo % 3) + 1 : 1;
-      kind = p.combo === 1 ? "light1" : p.combo === 2 ? "light2" : "heavy";
+      if (p.counter > 0) {
+        kind = "counter";
+        p.counter = 0;
+        p.combo = 0;
+      } else {
+        p.combo = p.comboTimer > 0 ? (p.combo % 3) + 1 : 1;
+        kind = p.combo === 1 ? "light1" : p.combo === 2 ? "light2" : "heavy";
+      }
     } else {
       kind =
         key === "k"
-          ? "wave"
+          ? "charging"
           : key === "l"
             ? "spin"
             : key === "u"
@@ -325,6 +356,30 @@ export class Combat {
   actionStep(dt: number, input: Input) {
     const p = this.player,
       a = p.action!;
+    if (a.kind === "charging") {
+      const previous = a.time;
+      a.time += dt;
+      if (input.x) a.facing = p.facing = Math.sign(input.x);
+      const length = Math.hypot(input.x, input.y) || 1;
+      p.x += (input.x / length) * 72 * dt;
+      p.y += (input.y / length) * 54 * dt;
+      p.moving = !!(input.x || input.y);
+      if (previous < 0.8 && a.time >= 0.8) {
+        this.effect("perfect", p.x, p.y - 30, 0.4);
+        this.bridge.audio("loot");
+      }
+      if (!input.keys.has("k")) {
+        p.action = {
+          ...a,
+          kind: "wave",
+          time: 0,
+          charged: a.time >= 0.8,
+          spec: { ...actions.wave, windup: 0.1 },
+          hit: new Set(),
+        };
+      }
+      return;
+    }
     const previous = a.time;
     a.time += dt;
     p.facing = a.facing;
@@ -362,6 +417,12 @@ export class Combat {
         a.fired = true;
         this.launchWave(a);
       } else if (a.kind !== "wave" && a.kind !== "dodge") {
+        if (a.kind === "counter" && !a.fired) {
+          a.fired = true;
+          this.effect("perfect", p.x, p.y - 30, 0.35);
+          if (stats(this.bridge.save).specials.includes("reprisal"))
+            this.launchWave({ ...a, spec: { ...a.spec, damage: 1.3 } });
+        }
         const pulse =
           a.kind === "spin"
             ? Math.min(4, Math.floor((a.time - start) / 0.096))
@@ -398,8 +459,13 @@ export class Combat {
       if (a.kind === "heavy" && s.counts[0] >= 4) multiplier += 0.7;
       if (e.burn > 0 && s.counts[2] >= 4) multiplier *= 1.25;
       const damage = Math.round(s.attack * multiplier * (crit ? 1.7 : 1));
+      if (
+        (!basic(a.kind) || a.kind === "counter") &&
+        (s.counts[2] >= 2 || s.specials.includes("wildfire"))
+      )
+        e.burn = 4;
       const push =
-        a.kind === "heavy"
+        a.kind === "heavy" || a.kind === "counter"
           ? 280
           : a.kind === "rush"
             ? 210
@@ -407,11 +473,17 @@ export class Combat {
               ? -40
               : 40;
       this.damage(e, damage, crit, {
-        stun: a.kind === "heavy" ? 0.38 : a.kind === "spin" ? 0.15 : 0.25,
+        stun:
+          a.kind === "counter"
+            ? 0.55
+            : a.kind === "heavy"
+              ? 0.38
+              : a.kind === "spin"
+                ? 0.15
+                : 0.25,
         push: a.facing * push,
-        heavy: a.kind === "heavy" || a.kind === "rush",
+        heavy: a.kind === "heavy" || a.kind === "rush" || a.kind === "counter",
       });
-      if (!basic(a.kind) && s.counts[2] >= 2) e.burn = 4;
       if (a.kind === "spin" && !e.boss && !e.armor) {
         e.vx = (p.x - e.x) * 2.5;
         e.vy = (p.y - e.y) * 2.5;
@@ -421,6 +493,8 @@ export class Combat {
   launchWave(a: Action) {
     const s = stats(this.bridge.save),
       count = s.counts[1] >= 4 ? 2 : 1;
+    if (a.kind === "wave")
+      this.cooldowns.k = actions.wave.cooldown * (1 - s.cdr / 100);
     for (let i = 0; i < count; i++)
       this.projectiles.push({
         id: ++this.serial,
@@ -434,11 +508,20 @@ export class Combat {
         life: 0.95 + i * 0.06,
         kind: "wave",
         facing: a.facing,
-        damage: s.attack * a.spec.damage * (1 + s.skill / 100) * (i ? 0.8 : 1),
+        damage:
+          s.attack *
+          a.spec.damage *
+          (1 + s.skill / 100) *
+          (i ? 0.8 : 1) *
+          (a.charged ? 1.7 : 1),
         crit: s.crit,
-        burn: s.counts[2] >= 2,
+        burn: s.counts[2] >= 2 || s.specials.includes("wildfire"),
         ember: s.counts[2] >= 4,
         hit: new Set(),
+        charged: !!a.charged,
+        returnAt:
+          a.charged && s.specials.includes("returning") ? 0.6 : undefined,
+        age: 0,
       });
   }
   damage(
@@ -455,7 +538,9 @@ export class Combat {
     if (e.hp <= 0 || !this.enemies.includes(e)) return;
     const damage = Math.max(
       1,
-      Math.round(raw * (e.boss && e.state === "recover" ? 1.2 : 1)),
+      Math.round(
+        raw * (e.boss && e.state === "recover" && !e.followup ? 1.2 : 1),
+      ),
     );
     e.hp -= damage;
     e.flash = 0.1;
@@ -472,6 +557,7 @@ export class Combat {
       e.hitstun = Math.max(e.hitstun, options.stun ?? 0.2);
       e.vx = options.push ?? 0;
       e.armor = false;
+      e.followup = undefined;
       this.hazards = this.hazards.filter((h) => h.caster !== e || h.fired);
     }
     this.effects.push({
@@ -489,11 +575,48 @@ export class Combat {
       this.hazards = this.hazards.filter((h) => h.caster !== e || h.fired);
       this.effect("death", e.x, e.y, 0.55);
       this.bridge.reward(e);
+      if (e.burn > 0 && stats(this.bridge.save).specials.includes("wildfire")) {
+        this.effect("blast", e.x, e.y, 0.4);
+        for (const nearby of [...this.enemies]) {
+          if (Math.hypot(nearby.x - e.x, (nearby.y - e.y) * 1.8) >= 130)
+            continue;
+          nearby.burn = 4;
+          this.damage(nearby, stats(this.bridge.save).attack * 0.65, false, {
+            dot: true,
+          });
+        }
+      }
     }
   }
-  hurt(raw: number, sourceX = this.player.x - 1) {
+  hurt(raw: number, sourceX = this.player.x - 1, allowPrecision = true) {
     const p = this.player;
-    if (p.inv > 0 || this.bridge.run?.finished) return;
+    if (this.bridge.run?.finished) return;
+    if (p.inv > 0) {
+      const a = p.action;
+      if (
+        allowPrecision &&
+        a?.kind === "dodge" &&
+        this.phase(a) === "active" &&
+        a.time <= 0.17 &&
+        !a.hit.has("perfect")
+      ) {
+        a.hit.add("perfect");
+        p.counter = 1.8;
+        this.effect("perfect", p.x, p.y - 30, 0.45);
+        this.effects.push({
+          x: p.x,
+          y: p.y - 85,
+          kind: "text",
+          text: "精准闪避 · J反击",
+          color: 0xafe8d6,
+          life: 0.9,
+          max: 0.9,
+          facing: 1,
+        });
+        this.bridge.audio("loot");
+      }
+      return;
+    }
     const damage = Math.max(
       2,
       Math.round((raw * 100) / (100 + stats(this.bridge.save).defense)),
@@ -513,6 +636,7 @@ export class Combat {
       trail: 0,
     };
     p.combo = 0;
+    p.counter = 0;
     this.buffer = null;
     this.effects.push({
       x: p.x,
@@ -575,12 +699,17 @@ export class Combat {
       if (e.stateTime >= e.active) {
         e.state = "recover";
         e.stateTime = 0;
-        e.armor = false;
+        e.armor = !!e.followup;
       }
       return;
     }
     if (e.state === "recover") {
       if (e.stateTime >= e.recovery) {
+        if (e.followup) {
+          const next = e.followup;
+          this.prepareEnemy(e, next);
+          return;
+        }
         e.state = "idle";
         e.stateTime = 0;
         e.cool = e.kind % 2 === 1 && !e.boss ? 0.8 : 0.35;
@@ -627,7 +756,12 @@ export class Combat {
     } else if (ranged && dist < 550)
       this.prepareEnemy(e, e.kind === 3 ? "explode" : "arrow");
     else if (dist < 120 && Math.abs(dy) < 44)
-      this.prepareEnemy(e, e.elite ? "heavy" : "slash");
+      this.prepareEnemy(
+        e,
+        e.elite && (runIsTomb(this.bridge) ? e.phase % 2 === 1 : true)
+          ? "heavy"
+          : "slash",
+      );
   }
   prepareEnemy(e: Enemy, move: EnemyMove) {
     e.move = move;
@@ -638,6 +772,13 @@ export class Combat {
     e.aimY = this.player.y;
     e.facing = e.aimX >= e.x ? 1 : -1;
     e.phase++;
+    e.followup = undefined;
+    if (
+      runIsTomb(this.bridge) &&
+      ((e.boss && e.hp < e.max * 0.5 && move === "combo") ||
+        (e.elite && move === "slash"))
+    )
+      e.followup = e.boss ? "charge" : "heavy";
     e.armor = e.boss || (e.elite && move === "heavy");
     e.windup =
       move === "arrow"
@@ -659,6 +800,8 @@ export class Combat {
           : move === "arrow"
             ? 0.12
             : 0.18;
+    if (e.kind === 1 && !e.boss && move === "arrow" && e.phase % 2 === 0)
+      e.active = 0.34;
     e.recovery = e.boss
       ? move === "heavy"
         ? 1.18
@@ -671,6 +814,14 @@ export class Combat {
     if (e.boss && e.hp < e.max * 0.5) {
       e.windup *= 0.85;
       e.recovery *= 0.86;
+    }
+    if (e.followup) e.recovery = 0.28;
+    else if (runIsTomb(this.bridge) && (e.boss || e.elite))
+      e.recovery =
+        move === "charge" ? 1.45 : move === "heavy" ? 1.35 : e.recovery;
+    if (move === "charge") {
+      e.aimX = clamp(e.x + e.facing * 820 * e.active, 55, 1040);
+      e.aimY = e.y;
     }
     if (move === "burrow" || move === "poison" || move === "explode")
       this.hazards.push({
@@ -732,13 +883,29 @@ export class Combat {
       dy = Math.abs(p.y - e.y);
     let pulse = 0;
     if (e.move === "charge") {
-      e.x = clamp(e.x + e.facing * 820 * dt, 55, 1040);
-      e.y += clamp(e.aimY - e.y, -60 * dt, 60 * dt);
-      if (Math.abs(p.x - e.x) < 68 && dy < 32)
+      const previousX = e.x;
+      e.x =
+        e.facing > 0
+          ? Math.min(e.aimX, e.x + 820 * dt)
+          : Math.max(e.aimX, e.x - 820 * dt);
+      if (
+        p.x > Math.min(previousX, e.x) - 68 &&
+        p.x < Math.max(previousX, e.x) + 68 &&
+        dy < 32
+      )
         this.hurt(this.enemyDamage(e), e.x);
       if (Math.floor(e.stateTime * 25) !== Math.floor((e.stateTime - dt) * 25))
         this.effect("dust", e.x, e.y, 0.3);
       return;
+    }
+    if (
+      e.move === "arrow" &&
+      e.active > 0.3 &&
+      e.stateTime >= 0.2 &&
+      e.pulse < 1
+    ) {
+      e.pulse = 1;
+      this.executeEnemy(e);
     }
     if (!["slash", "heavy", "combo"].includes(e.move)) return;
     if (e.move === "combo") pulse = Math.min(2, Math.floor(e.stateTime / 0.24));
@@ -749,9 +916,13 @@ export class Combat {
       return;
     e.pulse = pulse;
     this.effect("enemy", e.x, e.y, 0.18, e.facing);
-    const range = e.move === "heavy" ? 180 : e.boss ? 145 : 105,
-      depth = e.move === "heavy" ? 65 : 43;
-    if (dx > -12 && dx < range && dy < depth)
+    const area = enemyArea(e);
+    if (
+      p.x > area.x &&
+      p.x < area.x + area.w &&
+      p.y > area.y &&
+      p.y < area.y + area.h
+    )
       this.hurt(
         this.enemyDamage(e) *
           (e.move === "heavy" ? 1.4 : e.move === "combo" ? 0.7 : 1),
@@ -765,24 +936,56 @@ export class Combat {
       shot.x += shot.vx * dt;
       shot.y += shot.vy * dt;
       shot.life -= dt;
+      shot.age = (shot.age ?? 0) + dt;
+      if (
+        shot.returnAt !== undefined &&
+        !shot.returning &&
+        (shot.age >= shot.returnAt || shot.x >= 1040 || shot.x <= 55)
+      ) {
+        shot.returning = true;
+        shot.vx *= -1;
+        shot.facing *= -1;
+        shot.damage *= 0.6;
+        shot.life = 1.05;
+        shot.hit.clear();
+        shot.oldX = shot.x;
+        shot.oldY = shot.y;
+      }
       if (shot.kind === "wave") {
         for (const e of [...this.enemies]) {
-          if (shot.hit.has(e.id) || !this.swept(shot, e.x, e.y, 28, 38))
+          if (
+            shot.hit.has(e.id) ||
+            !this.swept(
+              shot,
+              e.x,
+              e.y,
+              shot.charged ? 40 : 28,
+              shot.charged ? 60 : 38,
+            )
+          )
             continue;
           shot.hit.add(e.id);
+          const wasBurning = e.burn > 0;
+          if (shot.burn) e.burn = 4;
           const crit = Math.random() * 100 < shot.crit;
           this.damage(
             e,
             shot.damage *
               (crit ? 1.7 : 1) *
-              (shot.ember && e.burn > 0 ? 1.25 : 1),
+              (shot.ember && wasBurning ? 1.25 : 1) *
+              (shot.charged && e.boss && e.state === "recover" && !e.followup
+                ? 1.25
+                : 1),
             crit,
-            { stun: 0.34, push: shot.facing * 100 },
+            {
+              stun: shot.charged ? 0.5 : 0.34,
+              push: shot.facing * (shot.charged ? 240 : 100),
+              heavy: !!shot.charged,
+            },
           );
-          if (shot.burn) e.burn = 4;
         }
       } else if (this.swept(shot, this.player.x, this.player.y, 20, 17)) {
-        if (this.player.inv <= 0) this.hurt(shot.damage, shot.oldX);
+        this.hurt(shot.damage, shot.oldX);
         shot.life = 0;
         this.effect("spark", shot.x, shot.y - 30, 0.16);
       }
@@ -815,7 +1018,7 @@ export class Combat {
       if (h.fired && h.linger > 0) {
         h.linger -= dt;
         if (Math.hypot(this.player.x - h.x, (this.player.y - h.y) * 1.8) < h.r)
-          this.hurt(h.damage * 0.25, h.x);
+          this.hurt(h.damage * 0.25, h.x, false);
       }
     }
     this.hazards = this.hazards.filter(
@@ -878,6 +1081,14 @@ export class Combat {
       },
       level: this.bridge.save.level,
       wave: this.wave + 1,
+      encounter:
+        this.bridge.run?.dungeon === 0 && this.bridge.run.room < 3
+          ? tombWaveNames[this.bridge.run.room][this.wave]
+          : null,
+      specials: stats(this.bridge.save).specials,
+      effects: this.effects
+        .filter((e) => e.kind === "perfect" || e.kind === "blast")
+        .map((e) => ({ kind: e.kind, x: e.x, y: e.y })),
       cooldowns: this.cooldowns,
       buffer: this.buffer,
       hitstop: this.hitstop,
@@ -899,6 +1110,13 @@ export class Combat {
         hitstun: e.hitstun,
         burn: e.burn,
         facing: e.facing,
+        elite: e.elite,
+        followup: e.followup,
+        warning:
+          e.state === "windup" &&
+          ["slash", "heavy", "combo", "charge"].includes(e.move)
+            ? enemyArea(e)
+            : undefined,
       })),
       projectiles: this.projectiles.map(({ hit, ...s }) => s),
       hazards: this.hazards.map(({ caster, ...h }) => h),

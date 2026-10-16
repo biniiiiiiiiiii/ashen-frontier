@@ -1,7 +1,16 @@
 import type { Save } from "./data";
 export type AttackKey = "j" | "k" | "l" | "u" | "space";
 export type ActionKind =
-  "light1" | "light2" | "heavy" | "wave" | "spin" | "rush" | "dodge" | "hurt";
+  | "light1"
+  | "light2"
+  | "heavy"
+  | "wave"
+  | "charging"
+  | "counter"
+  | "spin"
+  | "rush"
+  | "dodge"
+  | "hurt";
 export type EnemyState = "idle" | "windup" | "active" | "recover" | "hurt";
 export type EnemyMove =
   | "slash"
@@ -23,6 +32,24 @@ export interface ActionSpec {
 }
 /** 每个动作的时序、距离和伤害集中配置，表现与命中共用这份时序。 */
 export const actions: Record<ActionKind, ActionSpec> = {
+  charging: {
+    windup: 0.8,
+    active: 0,
+    recovery: 0,
+    damage: 0,
+    range: 0,
+    depth: 0,
+    cooldown: 0,
+  },
+  counter: {
+    windup: 0.07,
+    active: 0.15,
+    recovery: 0.22,
+    damage: 2.8,
+    range: 185,
+    depth: 65,
+    cooldown: 0,
+  },
   light1: {
     windup: 0.085,
     active: 0.1,
@@ -97,6 +124,8 @@ export const actions: Record<ActionKind, ActionSpec> = {
   },
 };
 export const actionNames: Record<ActionKind, string> = {
+  charging: "凝风蓄力",
+  counter: "闪避反击",
   light1: "一式 · 横斩",
   light2: "二式 · 逆斩",
   heavy: "三式 · 重斩",
@@ -116,6 +145,7 @@ export interface Action {
   vx: number;
   vy: number;
   trail: number;
+  charged?: boolean;
 }
 export interface Enemy {
   id: string;
@@ -148,6 +178,7 @@ export interface Enemy {
   armor: boolean;
   moving: boolean;
   walk: number;
+  followup?: EnemyMove;
 }
 export interface Hazard {
   x: number;
@@ -190,6 +221,10 @@ export interface Projectile {
   burn: boolean;
   ember: boolean;
   hit: Set<string>;
+  charged?: boolean;
+  returning?: boolean;
+  returnAt?: number;
+  age?: number;
 }
 export interface Run {
   dungeon: number;

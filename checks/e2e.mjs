@@ -6,7 +6,7 @@ const browser = await chromium.launch({ headless: true, channel: "msedge" });
 const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
-const URL = "http://127.0.0.1:4173";
+const URL = process.env.GAME_URL || "http://127.0.0.1:4173";
 const KEY = "ashen-frontier-v1";
 let checks = 0;
 async function check(value, message) {
@@ -123,11 +123,13 @@ async function bot(dungeon, hard) {
   if (hard) await page.click('[data-difficulty="hard"]');
   await page.evaluate(() => window.setManualTime(true));
   await page.click("#enter-dungeon");
+  const encounters = new Set();
   let sawHazard = false,
     escapeUntil = 0,
     escapeY = 0;
   for (let tick = 0; tick < 4000; tick++) {
     const s = await state();
+    if (s.encounter) encounters.add(s.encounter);
     if (s.mode !== "battle") break;
     if (s.paused) {
       await page.keyboard.press("Escape");
@@ -245,10 +247,15 @@ async function bot(dungeon, hard) {
       fullPage: true,
     });
   await page.click('[data-action="return"]');
-  return { sawHazard, end };
+  return { sawHazard, end, encounters };
 }
 const one = await bot(0, true);
 s = await stored();
+await check(one.encounters.size === 9, "墓道九波具有各自的遭遇编排");
+await check(
+  s.specialIntro === true && s.bag.some((i) => i.special === "reprisal"),
+  "首次新版墓道首领必得曙光回击并保存领取状态",
+);
 await check(
   s.pity === 0 && s.bag.some((i) => i.quality === 3),
   "困难首领第十次保底传说并重置计数",

@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { Combat, actions, type Bridge, type Enemy, type Input } from "./combat";
+import { enemyArea } from "./encounters";
 export type { Bridge, Enemy, Run } from "./combat";
 const W = 1100,
   H = 610;
@@ -150,8 +151,16 @@ export class World extends Phaser.Scene {
           4,
           e.armor ? 0xd8b062 : e.elite ? 0xd8aa64 : 0xb35f50,
         );
-        if (e.boss && e.state === "recover")
-          this.label(e.x, e.y - 145, "破绽 · 可反击", 12, "#bddd9a");
+        if ((e.boss || e.elite) && e.state === "recover")
+          this.label(
+            e.x,
+            e.y - (e.boss ? 145 : 95),
+            e.followup ? "追击将至 · 保持警惕" : "破绽 · 蓄力反击",
+            12,
+            e.followup ? "#edb47e" : "#bddd9a",
+          );
+        if (e.elite && e.state !== "recover")
+          this.label(e.x, e.y - 95, "裂骨先锋", 11, "#e5bb75");
         if (e.burn > 0) this.fire(e.x, e.y - 35, 0.45);
       } else
         this.actor(
@@ -166,6 +175,43 @@ export class World extends Phaser.Scene {
         );
     }
     this.drawProjectiles();
+    const action = this.player.action;
+    if (action?.kind === "charging") {
+      const progress = Math.min(1, action.time / 0.8);
+      this.g.lineStyle(2, progress === 1 ? 0xf5d588 : 0x9acfb9, 0.8);
+      this.g.strokeEllipse(
+        this.player.x,
+        this.player.y - 30,
+        45 + progress * 30,
+        80 + progress * 20,
+      );
+      this.rect(this.player.x - 30, this.player.y - 92, 60, 5, 0x29372f);
+      this.rect(
+        this.player.x - 30,
+        this.player.y - 92,
+        progress * 60,
+        5,
+        progress === 1 ? 0xf5d588 : 0x9acfb9,
+      );
+      this.label(
+        this.player.x,
+        this.player.y - 110,
+        progress === 1 ? "满蓄 · 松开K" : "凝风蓄力",
+        12,
+        "#f1d58e",
+      );
+    }
+    if (this.player.counter > 0) {
+      this.g.lineStyle(2, 0xafe8d6, 0.7);
+      this.g.strokeEllipse(this.player.x, this.player.y, 72, 26);
+      this.label(
+        this.player.x,
+        this.player.y - 110,
+        `J 反击 · ${this.player.counter.toFixed(1)}s`,
+        13,
+        "#afe8d6",
+      );
+    }
     if (this.door) {
       this.ellipse(1035, 435, 50, 130, 0xb5d8b1, 0.12);
       this.g.lineStyle(3, 0xb7d49e, 0.8);
@@ -210,12 +256,12 @@ export class World extends Phaser.Scene {
         this.g.lineStyle(1, color, 0.7);
         this.g.strokeEllipse(e.aimX, e.aimY, 24, 12);
       } else if (e.move === "charge") {
-        const x = e.facing > 0 ? e.x : e.x - 500;
-        this.rect(x, e.y - 32, 500, 64, color, 0.08 + t * 0.16);
+        const area = enemyArea(e);
+        this.rect(area.x, area.y, area.w, area.h, color, 0.08 + t * 0.16);
         this.g.lineStyle(1, color, 0.7);
-        this.g.strokeRect(x, e.y - 32, 500, 64);
+        this.g.strokeRect(area.x, area.y, area.w, area.h);
         for (let i = 1; i < 5; i++) {
-          const px = e.x + e.facing * i * 85;
+          const px = e.x + ((e.aimX - e.x) * i) / 5;
           this.g.beginPath();
           this.g.moveTo(px - e.facing * 12, e.y - 9);
           this.g.lineTo(px, e.y);
@@ -223,21 +269,30 @@ export class World extends Phaser.Scene {
           this.g.strokePath();
         }
       } else if (["slash", "heavy", "combo"].includes(e.move)) {
-        const range = e.move === "heavy" ? 180 : e.boss ? 145 : 105,
-          depth = e.move === "heavy" ? 65 : 43;
-        const x = e.facing > 0 ? e.x - 12 : e.x - range;
-        this.rect(
-          x,
-          e.y - depth,
-          range + 12,
-          depth * 2,
-          color,
-          0.06 + t * 0.12,
-        );
+        const area = enemyArea(e);
+        this.rect(area.x, area.y, area.w, area.h, color, 0.06 + t * 0.12);
         this.g.lineStyle(1, color, 0.4 + t * 0.5);
-        this.g.strokeRect(x, e.y - depth, range + 12, depth * 2);
-        this.rect(x, e.y + depth - 3, (range + 12) * t, 3, color, 0.8);
+        this.g.strokeRect(area.x, area.y, area.w, area.h);
+        this.rect(area.x, area.y + area.h - 3, area.w * t, 3, color, 0.8);
       }
+      if (e.boss || e.elite || e.move === "arrow")
+        this.label(
+          e.x,
+          e.y - (e.boss ? 145 : 100),
+          e.move === "charge"
+            ? "冲锋 · 横向突进"
+            : e.move === "combo"
+              ? "三连斩"
+              : e.move === "heavy"
+                ? "重斩 · 闪避后反击"
+                : e.move === "arrow"
+                  ? e.active > 0.3
+                    ? "二连射"
+                    : "瞄准射击"
+                  : "横扫",
+          11,
+          "#edbb84",
+        );
     }
   }
   drawProjectiles() {
@@ -246,7 +301,18 @@ export class World extends Phaser.Scene {
       if (p.kind === "wave") {
         const x = p.x,
           y = p.y - 33 + (p.visualOffset ?? 0);
-        this.ellipse(x, y, 45, 100, 0xb9e0c2, 0.08);
+        this.ellipse(
+          x,
+          y,
+          p.charged ? 75 : 45,
+          p.charged ? 145 : 100,
+          p.charged ? 0xf3ce8c : 0xb9e0c2,
+          0.14,
+        );
+        if (p.charged) {
+          g.lineStyle(3, p.returning ? 0x9de1dd : 0xf3ce8c, 0.8);
+          g.strokeEllipse(x, y, 22, 125);
+        }
         g.lineStyle(9, 0x78a98d, 0.2);
         g.beginPath();
         g.arc(
@@ -342,8 +408,8 @@ export class World extends Phaser.Scene {
             0xc5af70,
             t,
           );
-      } else if (e.kind === "blast") {
-        g.lineStyle(3, 0xe1ba7b, t);
+      } else if (e.kind === "blast" || e.kind === "perfect") {
+        g.lineStyle(3, e.kind === "perfect" ? 0xafe8d6 : 0xe1ba7b, t);
         g.strokeEllipse(e.x, e.y, 180 * (1 - t), 85 * (1 - t));
       }
     }
@@ -413,10 +479,11 @@ export class World extends Phaser.Scene {
       } else if (
         a.kind === "light1" ||
         a.kind === "light2" ||
-        a.kind === "heavy"
+        a.kind === "heavy" ||
+        a.kind === "counter"
       ) {
         const reverse = a.kind === "light2",
-          heavy = a.kind === "heavy";
+          heavy = a.kind === "heavy" || a.kind === "counter";
         const start = reverse ? 1.8 : heavy ? -2 : -1.65,
           end = reverse ? -1.35 : 1.2;
         angle =
@@ -432,6 +499,10 @@ export class World extends Phaser.Scene {
               ? (heavy ? 14 : 7) * Math.sin(progress * Math.PI)
               : (heavy ? 10 : 5) * (1 - recover);
         swing = phase === "active" ? 1 : 0;
+      } else if (a.kind === "charging") {
+        angle = -1.65;
+        lean = -6;
+        compress = 0.92;
       } else if (a.kind === "wave") {
         angle =
           phase === "windup"
