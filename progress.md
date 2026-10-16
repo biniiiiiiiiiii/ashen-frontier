@@ -11,4 +11,6 @@ Original prompt: 实现《灰烬边境》网页动作 RPG 首版：Phaser、Type
 验证：19 项动作检查 + 3 项打断检查 + 23 项流程回归通过；初始角色约213秒通关墓道；套装和满包折现通过。脚本 checks/actions.mjs、checks/interrupt.mjs、checks/e2e.mjs、checks/equipment.mjs。
 保留改进：正式逐帧像素动画、其他副本招式精修、真人手感与长期数值调优。
 
-2026-10-17 部署接入：用户确认 GitHub 私有仓库 biniiiiiiiiiii/ashen-frontier、Alibaba Cloud Linux 3 ECS 39.97.238.154、独立 Docker Nginx 容器和 8081。已添加构建/发布/回滚 Actions、严格受限发布接收器及初始化脚本。服务器 root 密码由用户在终端输入，尚待临时公钥授权。初始化前 ECS_READY=false，只跑构建。密钥位于项目外，不能提交。部署验收尚未完成，不能标记已上线。
+2026-10-17 部署接入：GitHub 私有仓库 biniiiiiiiiiii/ashen-frontier 已推送代码，构建/发布/回滚 Actions 和专用 Secrets 已配置。ECS 39.97.238.154 已启动独立 ashen-frontier-web 容器，宿主 8081 映射容器 8080；既有 my-tools 容器继续使用 8808。
+部署账号 ashen-deploy 仅能执行固定接收器的发布、查询、回滚命令，任意命令拒绝检查通过；无 sudo 和 Docker 组权限。官方 Nginx 镜像按本机镜像 ID 固定，以非 root 用户和只读文件系统运行。密钥位于项目外，不进入 Git。
+首次 Actions 已将 a03fcf1b362e39c582afc58852f3218c6512d98a 发布至服务器并通过本机健康检查。ECS_READY=true；公网 8081 仍待阿里云安全组放行，公网验收尚未完成。修复初始化脚本对 Windows 公钥换行的兼容性。

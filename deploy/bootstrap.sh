@@ -5,7 +5,7 @@ if [[ $EUID -ne 0 || $# -ne 1 ]]; then
     echo '使用方式：由 root 执行 bootstrap.sh 项目部署公钥文件'
     exit 1
 fi
-public_key="$(cat -- "$1")"
+public_key="$(tr -d '\r' < "$1")"
 [[ "$public_key" =~ ^ssh-ed25519\ [A-Za-z0-9+/=]+\ ashen-frontier-actions$ ]] || { echo '部署公钥格式不正确'; exit 1; }
 command -v docker >/dev/null
 command -v python3 >/dev/null
