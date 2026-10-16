@@ -8,6 +8,8 @@
 - 独立容器：`ashen-frontier-web`，只读 Nginx 容器，不挂载 Docker Socket。
 - 独立目录：`/srv/ashen-frontier`；配置在 `/etc/ashen-frontier`。
 
+2026-10-17 已完成服务器初始化和安全组 8081 放行，公网版本接口可访问，`ECS_READY=true`。临时 root 初始化授权已移除；日常推送使用 `ashen-deploy` 专用受限账号。实际版本回滚和恢复已通过服务器健康检查。
+
 ## 发布流程
 
 推送 `main` → 无服务器凭据的构建任务 → 校验部署接收器并打包 `dist/` → 发布任务读取专用 SSH 密钥 → 校验服务器身份 → 上传版本包 → 校验 SHA256、包内路径及版本 → 原子切换 `current` → 本机版本健康检查 → 公网版本检查。
